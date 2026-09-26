@@ -981,6 +981,7 @@ function limparForm() {
   $("#form-titulo").textContent = "Nova recorrida";
   $("#btn-salvar").textContent = "Salvar recorrida";
   $("#btn-cancelar").hidden = true;
+  $("#btn-limpar").hidden = false;
   $$(".erro", form()).forEach((e) => e.classList.remove("erro"));
   renderPotLista();
   if (!$("#app").hidden && !$("#tab-registro").hidden) atualizarGps(true);
@@ -1007,6 +1008,7 @@ function editar(id) {
   $("#form-titulo").textContent = `Editando: ${r.potreiro} (${fmtData(r.data)})`;
   $("#btn-salvar").textContent = "Salvar alterações";
   $("#btn-cancelar").hidden = false;
+  $("#btn-limpar").hidden = true;
   mostrarAba("registro");
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -1367,6 +1369,12 @@ function entrarNoApp() {
 function ligarEventos() {
   form().addEventListener("submit", salvar);
   $("#btn-cancelar").addEventListener("click", limparForm);
+  // Limpar: descarta o que foi preenchido e não salvo
+  $("#btn-limpar").addEventListener("click", () => {
+    limparForm();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    toast("Formulário limpo.");
+  });
 
   // Potreiro
   $("#pot-q").addEventListener("input", renderPotLista);
@@ -1448,7 +1456,11 @@ function ligarEventos() {
   $("#btn-sair").addEventListener("click", sair);
   $("#btn-csv").addEventListener("click", baixarCsv);
   $("#btn-mais").addEventListener("click", () => { limiteLista += 60; renderListas(); });
-  $$(".tabbar button").forEach((b) => b.addEventListener("click", () => mostrarAba(b.dataset.tab)));
+  // Tocar na aba em que já está volta para o topo da página
+  $$(".tabbar button").forEach((b) => b.addEventListener("click", () => {
+    if (b.classList.contains("on")) window.scrollTo({ top: 0, behavior: "smooth" });
+    else mostrarAba(b.dataset.tab);
+  }));
   ["#busca", "#f-tipo", "#f-periodo"].forEach((s) => $(s).addEventListener("input", () => { limiteLista = 60; renderListas(); }));
   ["#lot-q", "#lot-f"].forEach((s) => $(s).addEventListener("input", renderLotacao));
   $("#lot-lista").addEventListener("click", (e) => { const b = e.target.closest("[data-ir]"); if (b) irParaPotreiro(b.dataset.ir); });
