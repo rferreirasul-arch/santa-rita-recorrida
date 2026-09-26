@@ -4,6 +4,7 @@ const CFG = window.APP_CONFIG || {};
 const DEMO = !CFG.API_URL || !CFG.CLIENT_ID;
 const DIAS_LOTACAO_VELHA = 30; // lotação conferida há mais tempo que isso aparece em destaque
 const DIAS_SEM_MINERAL = 30;   // idem para cocho sem abastecer
+const DIAS_MINERAIS_SUGERIDOS = 15; // minerais usados no potreiro nesse período já vêm na recorrida
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -746,7 +747,7 @@ function linhaMineral(m = {}) {
   d.className = "linha linha-mineral";
   d.innerHTML = `<div class="passo">
       <button type="button" data-passo="-1" aria-label="Menos um saco">−</button>
-      <input type="text" class="qtd" inputmode="decimal" placeholder="Sacos" aria-label="Sacos" autocomplete="off">
+      <input type="text" class="qtd" inputmode="decimal" placeholder="0" aria-label="Sacos" autocomplete="off">
       <button type="button" data-passo="1" aria-label="Mais um saco">+</button>
     </div><span></span><button type="button" class="btn-x" data-remover aria-label="Remover">×</button>`;
   d.querySelector(".qtd").value = m.sacos ?? "";
@@ -795,13 +796,30 @@ function preencherPeloHistorico(lot, min) {
     $("#dica-animais").textContent = lot?.lotacao === "vazio" ? `Na recorrida de ${fmtData(lot.data)} o potreiro estava vazio.` : "";
   }
   $("#linhas-mineral").innerHTML = "";
-  if (min?.minerais?.length) {
-    min.minerais.forEach((m) => $("#linhas-mineral").appendChild(linhaMineral({ mineral: m.mineral })));
-    $("#dica-mineral").textContent = `Mineral da última vez (${fmtData(min.data)}): ${txtMinerais(min)}. Informe os sacos colocados agora.`;
+  const recentes = mineraisRecentes(potSel, min);
+  if (recentes.length) {
+    recentes.forEach((m) => $("#linhas-mineral").appendChild(linhaMineral({ mineral: m.mineral })));
+    $("#dica-mineral").textContent = `Minerais usados aqui: ${recentes.map((m) => `${m.mineral} (${fmtData(m.data).slice(0, 5)})`).join(", ")}. `
+      + `Informe os sacos colocados agora. O que não precisou repor pode ficar em branco.`;
   } else {
     $("#linhas-mineral").appendChild(linhaMineral());
     $("#dica-mineral").textContent = "";
   }
+}
+
+// Minerais usados no potreiro nos últimos dias (ex.: um para as vacas e outro para os
+// terneiros), mesmo que na última recorrida só um deles tenha sido reposto.
+// Sem nada no período, vale o mineral da última recorrida com mineral.
+function mineraisRecentes(pot, ultimo) {
+  const ref = campo("data").value || hojeISO();
+  const desde = somaDias(ref, -DIAS_MINERAIS_SUGERIDOS);
+  const vistos = new Map();
+  ativos()
+    .filter((r) => r.id !== editId && mesmoNome(r.potreiro, pot) && r.minerais?.length && r.data >= desde && r.data <= ref)
+    .sort(ordenar)
+    .forEach((r) => r.minerais.forEach((m) => { if (!vistos.has(m.mineral)) vistos.set(m.mineral, { mineral: m.mineral, data: r.data }); }));
+  if (!vistos.size && ultimo) ultimo.minerais.forEach((m) => vistos.set(m.mineral, { mineral: m.mineral, data: ultimo.data }));
+  return [...vistos.values()];
 }
 
 function lerLinhas(qual) {
@@ -814,6 +832,8 @@ function lerLinhas(qual) {
     const nomeDigitado = cInp.value.trim();
     if (!qInp.value.trim() && !nomeDigitado) return; // linha em branco: ignora
     const item = nomeDigitado && acharItem(listaDoTipo(qual === "animais" ? "categoria" : "mineral"), nomeDigitado);
+    // Mineral sugerido que não precisou repor: sacos em branco ou zero, a linha é ignorada
+    if (qual === "mineral" && item && (!qInp.value.trim() || q === 0)) { qInp.classList.remove("erro"); cInp.classList.remove("erro"); return; }
     const qOk = qInp.value.trim() && q > 0 && (qual !== "animais" || Number.isInteger(q));
     qInp.classList.toggle("erro", !qOk);
     cInp.classList.toggle("erro", !item);
@@ -915,7 +935,7 @@ async function salvar(ev) {
   if (comMineral) {
     const r = lerLinhas("mineral");
     if (r.erro) return falha("Confira as linhas de mineral: número de sacos e mineral da lista.", r.erro);
-    if (!r.itens.length) return falha("Informe os sacos de mineral colocados.");
+    if (!r.itens.length) return falha("Informe os sacos de pelo menos um mineral (ou desligue “Coloquei mineral no cocho”).", $("#linhas-mineral .qtd"));
     minerais = r.itens;
   }
 
