@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#4a2814">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Recorrida">
+  <title>Santa Rita Recorrida</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="img/icon-192.png?v=1">
+  <link rel="apple-touch-icon" href="img/icon-180.png?v=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Zilla+Slab:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ===== Tela de entrada ===== -->
+<section id="login" class="login" hidden>
+  <div class="login-card">
+    <img src="img/logo-branco.svg" alt="Fazenda Santa Rita" class="login-logo">
+    <p class="login-sub">Santa Rita Recorrida</p>
+    <div id="gbtn" class="gbtn"></div>
+    <p id="login-msg" class="login-msg"></p>
+    <p class="login-sobre">Aplicativo interno da Fazenda Santa Rita para registro da lotação dos potreiros e do mineral colocado nos cochos, com funcionamento sem internet.<br>
+      <a href="privacidade.html">Política de Privacidade</a></p>
+  </div>
+</section>
+
+<!-- ===== App ===== -->
+<div id="app" hidden>
+  <header class="hero">
+    <div class="hero-inner">
+      <img src="img/logo-branco.svg" alt="Fazenda Santa Rita" class="hero-logo">
+      <div class="hero-text">
+        <div class="eyebrow">Santa Rita · Recorrida</div>
+        <h1 id="titulo">Recorrida</h1>
+      </div>
+      <div class="sync">
+        <span id="sync-status" class="pill">…</span>
+        <button id="btn-sync" class="btn-hero" type="button">Sincronizar</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="relogin" class="banner" hidden>
+    <span>Para enviar os registros à planilha, entre com o Google <b>uma última vez</b> neste aparelho. Depois disso, não será mais pedido.</span>
+    <div id="relogin-btn"></div>
+  </div>
+  <div id="demo" class="banner banner-demo" hidden>
+    <span>Modo demonstração: os registros ficam só neste aparelho. Configure o <code>config.js</code> para ligar a planilha.</span>
+  </div>
+
+  <main>
+    <!-- ===== Registro ===== -->
+    <section id="tab-registro" class="tab">
+      <form id="form" class="card" novalidate autocomplete="off">
+        <div class="card-head">
+          <h2 id="form-titulo">Nova recorrida</h2>
+          <button type="button" id="btn-cancelar" class="btn-light" hidden>Cancelar edição</button>
+        </div>
+
+        <label class="field campo-data">
+          <span>Data</span>
+          <input type="date" name="data" required>
+        </label>
+
+        <!-- Potreiro -->
+        <div class="bloco">
+          <div class="bloco-titulo"><span class="num">1</span> Potreiro</div>
+
+          <div id="pot-busca">
+            <div class="busca">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+              <input type="search" id="pot-q" placeholder="Digite parte do nome" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+            </div>
+            <div class="gps">
+              <span id="gps-txt">Localização: aguardando…</span>
+              <button type="button" id="btn-gps" class="link">Atualizar</button>
+            </div>
+            <div id="pot-lista" class="pot-lista"></div>
+          </div>
+
+          <div id="pot-escolhido" class="pot-escolhido" hidden>
+            <div class="pe-topo">
+              <div>
+                <b id="pe-nome"></b>
+                <small id="pe-info"></small>
+              </div>
+              <button type="button" id="btn-trocar" class="btn-light">Trocar</button>
+            </div>
+            <p id="pe-ultima" class="pe-ultima"></p>
+            <button type="button" id="btn-cochos" class="btn-cocho">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11A6.5 6.5 0 0 1 18.5 10c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>
+              <span id="btn-cochos-txt">Localização dos cochos</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Animais -->
+        <div class="bloco" id="bloco-animais">
+          <button type="button" class="chave" id="chave-animais" aria-pressed="false">
+            <span class="num">2</span>
+            <span class="chave-txt">Conferi os animais <small>lotação do potreiro</small></span>
+            <span class="interruptor" aria-hidden="true"></span>
+          </button>
+          <div class="bloco-corpo" id="corpo-animais" hidden>
+            <p id="dica-animais" class="dica"></p>
+            <div id="linhas-animais" class="linhas"></div>
+            <div class="linha-acoes">
+              <button type="button" class="btn-mais" id="add-animal" aria-label="Adicionar categoria">+</button>
+              <span class="muted-s">Adicionar categoria</span>
+            </div>
+            <div id="aviso-vazio" class="aviso-vazio" hidden>
+              <b>Potreiro vazio.</b> Será registrado que não há animais aqui.
+            </div>
+            <button type="button" class="btn-vazio" id="btn-vazio">Potreiro vazio</button>
+          </div>
+        </div>
+
+        <!-- Mineral -->
+        <div class="bloco" id="bloco-mineral">
+          <button type="button" class="chave" id="chave-mineral" aria-pressed="false">
+            <span class="num">3</span>
+            <span class="chave-txt">Coloquei mineral no cocho <small>sacos por produto</small></span>
+            <span class="interruptor" aria-hidden="true"></span>
+          </button>
+          <div class="bloco-corpo" id="corpo-mineral" hidden>
+            <p id="dica-mineral" class="dica"></p>
+            <div id="linhas-mineral" class="linhas"></div>
+            <div class="linha-acoes">
+              <button type="button" class="btn-mais" id="add-mineral" aria-label="Adicionar mineral">+</button>
+              <span class="muted-s">Adicionar mineral</span>
+            </div>
+          </div>
+        </div>
+
+        <label class="field">
+          <span>Observações <small>(opcional)</small></span>
+          <textarea name="obs" rows="2" placeholder="Depósito vazio, cocho estragado, animal doente…"></textarea>
+        </label>
+
+        <div class="actions">
+          <button type="submit" class="btn-primary" id="btn-salvar">Salvar recorrida</button>
+        </div>
+      </form>
+
+      <div class="card">
+        <div class="card-head"><h2>Últimas recorridas</h2></div>
+        <div id="ultimos" class="lista"></div>
+      </div>
+    </section>
+
+    <!-- ===== Lotação ===== -->
+    <section id="tab-lotacao" class="tab" hidden>
+      <div id="lot-kpis" class="kpis"></div>
+      <div id="lot-cats" class="cats"></div>
+      <div class="card card-filtro">
+        <div class="filtros filtros-2">
+          <input type="search" id="lot-q" placeholder="Buscar potreiro">
+          <select id="lot-f">
+            <option value="">Todos os potreiros</option>
+            <option value="ocupados">Com animais</option>
+            <option value="vazios">Vazios</option>
+            <option value="sem">Sem informação</option>
+          </select>
+        </div>
+      </div>
+      <div id="lot-lista" class="lista"></div>
+    </section>
+
+    <!-- ===== Consulta ===== -->
+    <section id="tab-consulta" class="tab" hidden>
+      <div class="card">
+        <div class="filtros">
+          <input type="search" id="busca" placeholder="Buscar potreiro, categoria, mineral ou observação">
+          <select id="f-tipo">
+            <option value="">Tudo</option>
+            <option value="animais">Com lotação</option>
+            <option value="mineral">Com mineral</option>
+          </select>
+          <select id="f-periodo">
+            <option value="30">Últimos 30 dias</option>
+            <option value="90">Últimos 90 dias</option>
+            <option value="365">Últimos 12 meses</option>
+            <option value="">Todo o período</option>
+          </select>
+        </div>
+        <div class="lista-topo">
+          <span id="contagem" class="muted"></span>
+          <button type="button" id="btn-csv" class="btn-light">Baixar planilha (CSV)</button>
+        </div>
+      </div>
+      <div id="lista" class="lista"></div>
+      <button type="button" id="btn-mais" class="btn-light mais" hidden>Mostrar mais</button>
+    </section>
+
+    <!-- ===== Painel ===== -->
+    <section id="tab-painel" class="tab" hidden>
+      <div class="painel-topo">
+        <h2>Resumo</h2>
+        <select id="p-periodo">
+          <option value="30">Últimos 30 dias</option>
+          <option value="90" selected>Últimos 90 dias</option>
+          <option value="180">Últimos 6 meses</option>
+          <option value="365">Últimos 12 meses</option>
+        </select>
+      </div>
+      <div id="kpis" class="kpis"></div>
+      <div class="painel-grid">
+        <div class="card"><h3>Mineral colocado (sacos)</h3><div id="g-min" class="barras"></div></div>
+        <div class="card"><h3>Animais por categoria (hoje)</h3><div id="g-cat" class="barras"></div></div>
+        <div class="card full">
+          <h3>Consumo de mineral por potreiro</h3>
+          <p class="muted">Estimativa de g/cabeça/dia: o mineral de cada abastecimento é consumido até o abastecimento seguinte, com a lotação registrada nas recorridas. Precisa de pelo menos 2 abastecimentos no período.</p>
+          <div id="t-consumo" class="tabela"></div>
+        </div>
+        <div class="card full">
+          <h3>Dias sem abastecer o cocho</h3>
+          <p class="muted">Potreiros com animais, pela data do último mineral registrado.</p>
+          <div id="t-dias" class="tabela"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="rodape">
+    <span id="quem"></span>
+    <button type="button" id="btn-sair" class="link">Sair</button>
+    · <a href="privacidade.html" class="link">Privacidade</a>
+  </footer>
+
+  <nav class="tabbar">
+    <button type="button" data-tab="registro" class="on">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Registro
+    </button>
+    <button type="button" data-tab="lotacao">
+      <svg viewBox="0 0 24 24"><path d="M4 5h7v6H4zM13 5h7v6h-7zM4 13h7v6H4zM13 13h7v6h-7z"/></svg>Lotação
+    </button>
+    <button type="button" data-tab="consulta">
+      <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Consulta
+    </button>
+    <button type="button" data-tab="painel">
+      <svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-6"/></svg>Painel
+    </button>
+  </nav>
+</div>
+
+<!-- ===== Janela: cochos ===== -->
+<dialog id="dlg-cochos" class="dlg">
+  <div class="dlg-cab">
+    <h2>Cochos · <span id="dc-nome"></span></h2>
+    <button type="button" class="dlg-x" data-fechar aria-label="Fechar">×</button>
+  </div>
+  <p class="muted">Fique ao lado do cocho e toque em <b>Marcar aqui</b>. O app espera o GPS estabilizar antes de gravar.</p>
+  <div id="dc-lista"></div>
+  <div id="dc-captura" class="captura" hidden>
+    <div class="cap-titulo" id="cap-titulo"></div>
+    <div class="cap-barra"><i id="cap-i"></i></div>
+    <div class="cap-info" id="cap-info">Procurando sinal do GPS…</div>
+    <div class="cap-btns">
+      <button type="button" class="btn-light" id="cap-cancelar">Cancelar</button>
+      <button type="button" class="btn-primary" id="cap-gravar" disabled>Gravar</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ===== Janela: novo potreiro ===== -->
+<dialog id="dlg-potreiro" class="dlg">
+  <form method="dialog" id="form-pot" novalidate>
+    <div class="dlg-cab">
+      <h2>Adicionar potreiro</h2>
+      <button type="button" class="dlg-x" data-fechar aria-label="Fechar">×</button>
+    </div>
+    <label class="field">
+      <span>Nome do potreiro</span>
+      <input type="text" id="np-nome" autocomplete="off" autocapitalize="words" maxlength="80">
+    </label>
+    <p id="np-aviso" class="aviso" hidden></p>
+    <p class="muted">Ele entra na aba Potreiros da planilha. Depois, marque o cocho em <b>Marcar localização do cocho</b> quando estiver nele.</p>
+    <div class="cap-btns">
+      <button type="button" class="btn-light" data-fechar>Cancelar</button>
+      <button type="submit" class="btn-primary" id="np-ok">Adicionar</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</body>
+</html>
