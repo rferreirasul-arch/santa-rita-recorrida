@@ -139,6 +139,23 @@
           </div>
         </div>
 
+        <!-- Falta no depósito -->
+        <div class="bloco" id="bloco-falta">
+          <button type="button" class="chave" id="chave-falta" aria-pressed="false">
+            <span class="num">4</span>
+            <span class="chave-txt">Falta mineral no depósito <small>o que acabou e precisa trazer</small></span>
+            <span class="interruptor" aria-hidden="true"></span>
+          </button>
+          <div class="bloco-corpo" id="corpo-falta" hidden>
+            <p class="dica">Marque os minerais que estão faltando no depósito deste potreiro.</p>
+            <div id="faltas-lista" class="faltas-lista"></div>
+            <div class="falta-outro">
+              <span class="muted-s">Outro mineral:</span>
+              <div id="falta-combo"></div>
+            </div>
+          </div>
+        </div>
+
         <label class="field">
           <span>Observações <small>(opcional)</small></span>
           <textarea name="obs" rows="2" placeholder="Depósito vazio, cocho estragado, animal doente…"></textarea>
@@ -211,6 +228,10 @@
         </select>
       </div>
       <div id="kpis" class="kpis"></div>
+      <div class="card card-falta">
+        <h3>Falta no depósito</h3>
+        <div id="p-faltas"></div>
+      </div>
       <div class="painel-grid">
         <div class="card"><h3>Mineral colocado (sacos)</h3><div id="g-min" class="barras"></div></div>
         <div class="card"><h3>Animais por categoria (hoje)</h3><div id="g-cat" class="barras"></div></div>

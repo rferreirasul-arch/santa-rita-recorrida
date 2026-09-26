@@ -13,6 +13,11 @@ const ABA_MINERAIS = "Minerais";
 const ABA_CATEGORIAS = "Categorias";
 const ABA_USUARIOS = "Usuarios";
 const ABA_APARELHOS = "Aparelhos";
+const ABA_FALTAS = "Faltas";
+
+// Aba Faltas: uma linha por mineral em falta no depósito de um potreiro
+const COLUNAS_FALTAS = ["id", "data", "potreiro", "mineral", "registrado_por", "criado_em", "reposto_em", "reposto_por", "atualizado_em", "excluido", "recorrida_id"];
+const CABECALHO_FALTAS = ["ID", "Data", "Potreiro", "Mineral", "Registrado por", "Registrado em", "Reposto em", "Reposto por", "Atualizado em (não editar)", "Excluído", "ID da recorrida"];
 
 const CABECALHO_APARELHOS = ["Código", "E-mail", "Nome", "Aparelho", "Liberado em", "Último uso", "Ativo (SIM/NÃO)", "Resumo da chave (não editar)"];
 
@@ -114,6 +119,7 @@ function configurar() {
     usu.setFrozenRows(1);
   }
   abaAparelhos_();
+  abaFaltas_();
 
   const vazia = ss.getSheetByName("Página1") || ss.getSheetByName("Sheet1");
   if (vazia && vazia.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(vazia);
@@ -132,7 +138,7 @@ function doPost(e) {
     } else {
       const usuario = req.chave ? verificarAparelho_(req.chave) : verificarUsuario_(req.token);
       if (req.action === "ping") saida = { ok: true, usuario: usuario };
-      else if (req.action === "sync") saida = sincronizar_(req.registros || [], req.alteracoes || [], usuario);
+      else if (req.action === "sync") saida = sincronizar_(req.registros || [], req.alteracoes || [], usuario, req.faltas || []);
       else if (req.action === "sair") { desativarAparelho_(req.chave); saida = { ok: true }; }
       else throw erro_("Ação desconhecida.", "ACAO");
     }
@@ -248,7 +254,7 @@ function usuariosAutorizados_() {
 // Sincronização: aplica as alterações de cadastro (potreiros novos, cochos,
 // categorias e minerais novos), grava as recorridas e devolve tudo
 // ---------------------------------------------------------------------
-function sincronizar_(recebidos, alteracoes, usuario) {
+function sincronizar_(recebidos, alteracoes, usuario, faltasRecebidas) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
@@ -289,6 +295,7 @@ function sincronizar_(recebidos, alteracoes, usuario) {
       ok: true,
       usuario: usuario,
       registros: base.lista,
+      faltas: sincronizarFaltas_(faltasRecebidas || [], usuario),
       catalogo: { potreiros: lerPotreiros_(), minerais: lerMinerais_(), categorias: lerLista_(ABA_CATEGORIAS) },
     };
   } finally {
@@ -476,6 +483,90 @@ function paraLinha_(r, cab, kgSaco) {
     return "";
   });
   return linha;
+}
+
+// ---------------------------------------------------------------------
+// Aba Faltas (mineral em falta no depósito)
+// ---------------------------------------------------------------------
+function abaFaltas_() {
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(ABA_FALTAS);
+  if (!sh) {
+    sh = ss.insertSheet(ABA_FALTAS);
+    sh.getRange(1, 1, 1, CABECALHO_FALTAS.length).setValues([CABECALHO_FALTAS]).setFontWeight("bold").setBackground("#b3362f").setFontColor("#ffffff");
+    sh.setFrozenRows(1);
+    const n = sh.getMaxRows() - 1;
+    sh.getRange(2, 1, n, 1).setNumberFormat("@");
+    sh.getRange(2, 2, n, 1).setNumberFormat("dd/mm/yyyy");
+    sh.getRange(2, 6, n, 2).setNumberFormat("dd/mm/yyyy hh:mm");
+    sh.getRange(2, 9, n, 1).setNumberFormat("@");
+    sh.getRange(2, 11, n, 1).setNumberFormat("@");
+    sh.hideColumns(9, 1);
+    sh.hideColumns(11, 1);
+    sh.hideColumns(1, 1);
+  }
+  return sh;
+}
+
+function lerFaltas_(sh) {
+  const n = sh.getLastRow() - 1;
+  if (n < 1) return [];
+  const tz = Session.getScriptTimeZone();
+  return sh.getRange(2, 1, n, COLUNAS_FALTAS.length).getValues().map((l) => {
+    const f = {};
+    COLUNAS_FALTAS.forEach((c, i) => {
+      let v = l[i];
+      if (v instanceof Date) v = c === "data" ? Utilities.formatDate(v, tz, "yyyy-MM-dd") : v.toISOString();
+      f[c] = v === null || v === undefined ? "" : v;
+    });
+    f.excluido = f.excluido === true || String(f.excluido).toUpperCase() === "TRUE";
+    f.atualizado_em = String(f.atualizado_em);
+    return f;
+  }).filter((f) => f.id);
+}
+
+function linhaFalta_(f) {
+  const data = (v) => {
+    if (!v) return "";
+    const d = String(v).length === 10 ? new Date(Number(v.slice(0, 4)), Number(v.slice(5, 7)) - 1, Number(v.slice(8, 10))) : new Date(v);
+    return isNaN(d) ? "" : d;
+  };
+  return COLUNAS_FALTAS.map((c) => {
+    const v = f[c];
+    if (c === "data" || c === "criado_em" || c === "reposto_em") return data(v);
+    if (c === "excluido") return v === true;
+    return v === undefined || v === null ? "" : v;
+  });
+}
+
+// Grava o que veio do celular (versão mais nova vence) e devolve todas as faltas
+function sincronizarFaltas_(recebidas, usuario) {
+  const sh = abaFaltas_();
+  const lista = lerFaltas_(sh);
+  const indice = {};
+  lista.forEach((f, i) => { indice[f.id] = i; });
+  const novas = [];
+  recebidas.forEach((f) => {
+    if (!f || !f.id) return;
+    const pos = indice[f.id];
+    if (pos !== undefined) {
+      const atual = lista[pos];
+      if (String(atual.atualizado_em) >= String(f.atualizado_em)) return;
+      f.registrado_por = atual.registrado_por;
+      f.criado_em = atual.criado_em;
+      if (f.reposto_em && !atual.reposto_em) f.reposto_por = usuario.email;
+      sh.getRange(pos + 2, 1, 1, COLUNAS_FALTAS.length).setValues([linhaFalta_(f)]);
+      lista[pos] = f;
+    } else {
+      f.registrado_por = usuario.email;
+      if (f.reposto_em) f.reposto_por = usuario.email;
+      indice[f.id] = lista.length;
+      lista.push(f);
+      novas.push(linhaFalta_(f));
+    }
+  });
+  if (novas.length) sh.getRange(sh.getLastRow() + 1, 1, novas.length, COLUNAS_FALTAS.length).setValues(novas);
+  return lista;
 }
 
 function erro_(msg, codigo) {

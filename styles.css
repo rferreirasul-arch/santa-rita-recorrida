@@ -224,6 +224,30 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .btn-vazio.on { background: var(--ink); color: #fff; border-color: var(--ink); }
 .aviso-vazio { background: var(--field); border-radius: 10px; padding: 12px; font-size: .95rem; }
 
+/* Falta no depósito */
+.faltas-lista { display: flex; flex-direction: column; gap: 6px; }
+.falta-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 10px 12px; min-height: 48px;
+}
+.falta-item .fi-nome { flex: 1; font-weight: 600; }
+.falta-item .fi-nome small { display: block; font-weight: 400; color: var(--muted); font-size: .8rem; }
+.falta-item .interruptor { width: 44px; height: 26px; }
+.falta-item .interruptor::after { width: 20px; height: 20px; }
+.falta-item[aria-pressed="true"] { border-color: var(--perda); background: var(--perda-bg); }
+.falta-item[aria-pressed="true"] .interruptor { background: var(--perda); }
+.falta-item[aria-pressed="true"] .interruptor::after { left: 21px; }
+.falta-item.aberta { cursor: default; opacity: .85; }
+.falta-outro { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; margin-top: 10px; }
+.chave[aria-pressed="true"]#chave-falta .interruptor { background: var(--perda); }
+.card-falta h3 { color: var(--perda); }
+.pf-grupo { border-top: 1px solid var(--line); padding: 10px 0; }
+.pf-grupo:first-child { border-top: 0; padding-top: 0; }
+.pf-min { font-weight: 700; font-size: 1.02rem; margin-bottom: 4px; }
+.pf-linha { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 4px 0; font-size: .95rem; }
+.pf-linha small { display: block; color: var(--muted); font-size: .8rem; }
+.pf-linha .pend { color: var(--aviso); }
+
 /* Caixa de seleção com filtro (categoria e mineral) */
 .combo { position: relative; min-width: 0; }
 .combo input { padding-right: 32px; }
@@ -297,6 +321,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .badge { font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--ok-bg); color: var(--ok); }
 .badge.min { background: var(--primary-bg); color: var(--primary); }
 .badge.vazio { background: var(--field); color: var(--muted); }
+.badge.falta { background: var(--perda-bg); color: var(--perda); }
+.txt-falta { color: var(--perda); }
 .vazio { text-align: center; color: var(--muted); padding: 24px 8px; }
 @media (max-width: 560px) {
   .reg { grid-template-columns: 50px 1fr; }

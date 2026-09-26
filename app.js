@@ -40,6 +40,7 @@ const CATALOGO_INICIAL = {
 let registros = [];   // recorridas guardadas no aparelho (inclusive excluídas)
 let catalogo = CATALOGO_INICIAL;
 let alteracoes = [];  // cadastros feitos no aparelho e ainda não enviados (potreiro novo, cocho, categoria, mineral)
+let faltas = [];      // faltas de mineral no depósito (aba Faltas da planilha)
 let usuario = null;   // { email, nome, chave }
 let editId = null;
 let sincronizando = false;
@@ -104,6 +105,11 @@ const mesmoNome = (a, b) => norm(a) === norm(b);
 const numero = (v) => { const n = Number(String(v ?? "").replace(",", ".")); return isFinite(n) ? n : NaN; };
 const ativos = () => registros.filter((r) => !r.excluido);
 const pendentes = () => registros.filter((r) => r._pendente);
+const faltasAtivas = () => faltas.filter((f) => !f.excluido);
+const faltasAbertas = () => faltasAtivas().filter((f) => !f.reposto_em);
+const faltasPendentes = () => faltas.filter((f) => f._pendente);
+const totalPendente = () => pendentes().length + alteracoes.length + faltasPendentes().length;
+const quem = (email) => String(email || "").split("@")[0];
 const haDias = (iso) => {
   const d = diasEntre(iso, hojeISO());
   return d <= 0 ? "hoje" : d === 1 ? "ontem" : `há ${d} dias`;
@@ -192,7 +198,7 @@ window.onGoogleLibraryLoad = () => {
 };
 
 async function sair() {
-  const n = pendentes().length + alteracoes.length;
+  const n = totalPendente();
   if (n && !confirm(`Há ${n} registro(s) ainda não enviados à planilha. Se sair agora, eles continuam guardados neste aparelho e serão enviados no próximo login. Sair mesmo assim?`)) return;
   if (usuario?.chave && navigator.onLine) {
     await Promise.race([chamarApi({ action: "sair", chave: usuario.chave }).catch(() => {}), new Promise((ok) => setTimeout(ok, 4000))]);
@@ -239,7 +245,8 @@ async function sincronizar(manual = false) {
 
     const envio = pendentes().map(semCampoLocal);
     const envioAlt = alteracoes.slice();
-    const resp = await chamarApi({ action: "sync", chave: usuario.chave, registros: envio, alteracoes: envioAlt });
+    const envioFaltas = faltasPendentes().map(semCampoLocal);
+    const resp = await chamarApi({ action: "sync", chave: usuario.chave, registros: envio, alteracoes: envioAlt, faltas: envioFaltas });
 
     // Junta o que veio da planilha com o que está no aparelho.
     // Um registro editado aqui durante o envio (mais novo) continua pendente.
@@ -265,10 +272,22 @@ async function sincronizar(manual = false) {
       await db.salvar("catalogo", catalogo);
       await db.salvar("alteracoes", alteracoes);
     }
+    // Faltas: vale a planilha, exceto o que foi alterado aqui depois do envio
+    if (resp.faltas) {
+      const locais = new Map(faltas.map((f) => [f.id, f]));
+      const novas = resp.faltas.map((sv) => {
+        const l = locais.get(sv.id);
+        return l?._pendente && l.atualizado_em > sv.atualizado_em ? l : { ...sv, _pendente: false };
+      });
+      const ids = new Set(novas.map((f) => f.id));
+      faltas.filter((f) => f._pendente && !ids.has(f.id)).forEach((f) => novas.push(f));
+      faltas = novas;
+      await db.salvar("faltas", faltas);
+    }
     await db.salvar("ultimo_sync", Date.now());
     registros = await db.todos();
     renderTudo();
-    const n = envio.length + envioAlt.length;
+    const n = envio.length + envioAlt.length + envioFaltas.length;
     if (manual || n) toast(n ? `${n} registro(s) enviado(s) à planilha.` : "Tudo sincronizado.");
   } catch (e) {
     if (e.codigo === "APARELHO") {
@@ -288,7 +307,7 @@ async function sincronizar(manual = false) {
 
 function atualizarStatus() {
   const el = $("#sync-status");
-  const n = pendentes().length + alteracoes.length;
+  const n = totalPendente();
   el.className = "pill";
   if (DEMO) { el.textContent = "Demonstração"; return; }
   if (sincronizando) { el.textContent = "Sincronizando…"; return; }
@@ -515,9 +534,12 @@ function escolherPotreiro(nome, { auto = false, preencher = true } = {}) {
   $("#pe-ultima").innerHTML = [
     lot ? `<b>Lotação</b> (${fmtData(lot.data)}, ${haDias(lot.data)}): ${esc(txtAnimais(lot))}` : "",
     min ? `<b>Mineral</b> (${fmtData(min.data)}, ${haDias(min.data)}): ${esc(txtMinerais(min))}` : "",
+    ...faltasAbertas().filter((f) => mesmoNome(f.potreiro, potSel))
+      .map((f) => `<b class="txt-falta">Falta no depósito</b>: ${esc(f.mineral)} (desde ${fmtData(f.data)})`),
   ].filter(Boolean).join("<br>") || "Ainda sem recorridas registradas neste potreiro.";
   renderBotaoCochos();
   if (preencher) preencherPeloHistorico(lot, min);
+  renderFaltas();
 }
 
 function trocarPotreiro() {
@@ -766,6 +788,7 @@ function ligarBloco(qual, ligado) {
   const chave = $(`#chave-${qual}`);
   chave.setAttribute("aria-pressed", String(ligado));
   $(`#corpo-${qual}`).hidden = !ligado;
+  if (qual === "falta") { renderFaltas(); return; }
   const linhas = $(`#linhas-${qual === "animais" ? "animais" : "mineral"}`);
   if (ligado && !linhas.children.length && !(qual === "animais" && vazio)) {
     linhas.appendChild(qual === "animais" ? linhaAnimal() : linhaMineral());
@@ -847,6 +870,90 @@ function lerLinhas(qual) {
 }
 
 // =====================================================================
+// Falta de mineral no depósito
+// =====================================================================
+let faltaSel = new Set(); // minerais marcados como em falta nesta recorrida
+
+// Mostra os minerais do potreiro (em falta, usados nos últimos dias ou nas linhas
+// de mineral acima) com uma chave liga/desliga cada
+function renderFaltas() {
+  const abertas = faltasAbertas().filter((f) => potSel && mesmoNome(f.potreiro, potSel) && f.recorrida_id !== editId);
+  const nomes = [];
+  const add = (n) => { if (n && !nomes.some((x) => mesmoNome(x, n))) nomes.push(n); };
+  abertas.forEach((f) => add(f.mineral));
+  if (potSel) mineraisRecentes(potSel, ultimoDoPotreiro(potSel, "mineral", editId)).forEach((m) => add(m.mineral));
+  $$("#linhas-mineral .combo-in").forEach((i) => add(acharItem(catalogo.minerais, i.value)?.nome));
+  faltaSel.forEach(add);
+  $("#faltas-lista").innerHTML = nomes.map((n) => {
+    const aberta = abertas.find((f) => mesmoNome(f.mineral, n));
+    const on = !!aberta || faltaSel.has(n);
+    const info = aberta ? `<small>em falta desde ${fmtData(aberta.data)} · para tirar, marque “Reposto” no Painel</small>` : "";
+    return `<button type="button" class="falta-item ${aberta ? "aberta" : ""}" data-falta="${esc(n)}" ${aberta ? 'data-aberta="1"' : ""} aria-pressed="${on}">
+      <span class="fi-nome">${esc(n)}${info}</span><span class="interruptor" aria-hidden="true"></span></button>`;
+  }).join("") || `<p class="muted-s">Nenhum mineral usado aqui recentemente. Escolha abaixo.</p>`;
+}
+
+function alternarFalta(btn) {
+  if (btn.dataset.aberta) { toast("Já está registrado como em falta. Quando repuser, marque “Reposto” no Painel."); return; }
+  const n = btn.dataset.falta;
+  if (faltaSel.has(n)) faltaSel.delete(n); else faltaSel.add(n);
+  renderFaltas();
+}
+
+function adicionarFaltaDoCombo(inp) {
+  const item = inp.value.trim() && acharItem(catalogo.minerais, inp.value);
+  if (!item) return;
+  faltaSel.add(item.nome);
+  inp.value = "";
+  inp.classList.remove("erro");
+  renderFaltas();
+}
+
+// Grava as faltas marcadas nesta recorrida (uma por mineral) e desfaz as desmarcadas
+function gravarFaltasDaRecorrida(rec, sel, agora) {
+  faltas.filter((f) => f.recorrida_id === rec.id && !f.excluido && !sel.has(f.mineral))
+    .forEach((f) => Object.assign(f, { excluido: true, atualizado_em: agora, _pendente: true }));
+  sel.forEach((mineral) => {
+    const id = `${rec.id}|${mineral}`;
+    const f = faltas.find((x) => x.id === id);
+    if (!f) {
+      faltas.push({ id, recorrida_id: rec.id, data: rec.data, potreiro: rec.potreiro, mineral,
+        registrado_por: usuario?.email || "demo", criado_em: agora, reposto_em: "", reposto_por: "",
+        atualizado_em: agora, excluido: false, _pendente: true });
+    } else if (f.excluido || f.data !== rec.data || f.potreiro !== rec.potreiro) {
+      Object.assign(f, { excluido: false, data: rec.data, potreiro: rec.potreiro, atualizado_em: agora, _pendente: true });
+    }
+  });
+  return db.salvar("faltas", faltas);
+}
+
+async function marcarReposto(id) {
+  const f = faltas.find((x) => x.id === id);
+  if (!f || !confirm(`${f.mineral} já foi reposto no depósito de ${f.potreiro}?`)) return;
+  const agora = new Date().toISOString();
+  Object.assign(f, { reposto_em: agora, reposto_por: usuario?.email || "demo", atualizado_em: agora, _pendente: true });
+  await db.salvar("faltas", faltas);
+  renderTudo();
+  toast(`${f.mineral} (${f.potreiro}) marcado como reposto.`);
+  sincronizar();
+}
+
+function renderFaltasPainel() {
+  const abertas = faltasAbertas().sort((a, b) => a.mineral.localeCompare(b.mineral, "pt-BR") || a.data.localeCompare(b.data));
+  if (!abertas.length) { $("#p-faltas").innerHTML = `<p class="vazio">Nenhum mineral em falta no depósito.</p>`; return; }
+  const grupos = {};
+  abertas.forEach((f) => (grupos[f.mineral] ||= []).push(f));
+  $("#p-faltas").innerHTML = Object.entries(grupos).map(([mineral, fs]) => `
+    <div class="pf-grupo">
+      <div class="pf-min">${esc(mineral)} <span class="muted-s">(${fs.length} potreiro${fs.length > 1 ? "s" : ""})</span></div>
+      ${fs.map((f) => `<div class="pf-linha">
+        <span>${esc(f.potreiro)}<small>desde ${fmtData(f.data)} (${haDias(f.data)}) · ${esc(quem(f.registrado_por))}${f._pendente ? ' · <span class="pend">aguardando envio</span>' : ""}</small></span>
+        <button type="button" class="btn-light" data-reposto="${esc(f.id)}">Reposto</button>
+      </div>`).join("")}
+    </div>`).join("");
+}
+
+// =====================================================================
 // Formulário
 // =====================================================================
 const form = () => $("#form");
@@ -869,6 +976,8 @@ function limparForm() {
   $("#linhas-animais").innerHTML = "";
   ligarBloco("animais", false);
   ligarBloco("mineral", false);
+  faltaSel = new Set();
+  ligarBloco("falta", false);
   $("#form-titulo").textContent = "Nova recorrida";
   $("#btn-salvar").textContent = "Salvar recorrida";
   $("#btn-cancelar").hidden = true;
@@ -892,6 +1001,8 @@ function editar(id) {
   marcarVazio(r.lotacao === "vazio");
   ligarBloco("animais", !!r.lotacao);
   ligarBloco("mineral", !!r.minerais?.length);
+  faltaSel = new Set(faltasAtivas().filter((f) => f.recorrida_id === id).map((f) => f.mineral));
+  ligarBloco("falta", faltaSel.size > 0);
   if (!r.lotacao) { $("#linhas-animais").innerHTML = ""; }
   $("#form-titulo").textContent = `Editando: ${r.potreiro} (${fmtData(r.data)})`;
   $("#btn-salvar").textContent = "Salvar alterações";
@@ -905,6 +1016,7 @@ async function excluir(id) {
   if (!r || !confirm(`Excluir a recorrida de ${r.potreiro} (${fmtData(r.data)})?`)) return;
   Object.assign(r, { excluido: true, atualizado_em: new Date().toISOString(), _pendente: true });
   await db.gravar(r);
+  await gravarFaltasDaRecorrida(r, new Set(), r.atualizado_em);
   if (editId === id) limparForm();
   renderTudo();
   toast("Recorrida excluída.");
@@ -922,7 +1034,9 @@ async function salvar(ev) {
 
   const comAnimais = blocoLigado("animais");
   const comMineral = blocoLigado("mineral");
-  if (!comAnimais && !comMineral) return falha("Ligue “Conferi os animais” e/ou “Coloquei mineral no cocho”.");
+  const comFalta = blocoLigado("falta");
+  if (!comAnimais && !comMineral && !comFalta) return falha("Ligue pelo menos uma opção: animais, mineral no cocho ou falta no depósito.");
+  if (comFalta && !faltaSel.size) return falha("Marque o mineral que está faltando no depósito (ou desligue a opção 4).");
 
   let animais = [];
   if (comAnimais && !vazio) {
@@ -957,6 +1071,7 @@ async function salvar(ev) {
     _pendente: true,
   };
   await db.gravar(rec);
+  await gravarFaltasDaRecorrida(rec, comFalta ? faltaSel : new Set(), agora);
   registros = await db.todos();
   toast(antigo ? "Alterações salvas." : `Recorrida de ${rec.potreiro} registrada.`);
   limparForm();
@@ -975,14 +1090,16 @@ function cartao(r) {
     r.lotacao === "vazio" ? `<span class="badge vazio">Vazio</span>` : "",
     r.minerais?.length ? `<span class="badge min">Mineral</span>` : "",
   ].join("");
+  const fs = faltasAtivas().filter((f) => f.recorrida_id === r.id);
   const tot = totalAnimais(r);
   return `
     <article class="reg">
       <div class="reg-data"><b>${d}/${m}</b><span>${a}</span></div>
       <div>
-        <div class="reg-pot">${esc(r.potreiro)} ${badges}</div>
+        <div class="reg-pot">${esc(r.potreiro)} ${badges}${fs.length ? `<span class="badge falta">Falta</span>` : ""}</div>
         ${r.lotacao ? `<div class="reg-linha"><i>Animais</i>${esc(txtAnimais(r))}${r.animais?.length > 1 ? ` <b>(${fmtNum(tot)})</b>` : ""}</div>` : ""}
         ${r.minerais?.length ? `<div class="reg-linha"><i>Mineral</i>${esc(txtMinerais(r))}</div>` : ""}
+        ${fs.length ? `<div class="reg-linha"><i>Falta no depósito</i>${fs.map((f) => esc(f.mineral) + (f.reposto_em ? " (reposto)" : "")).join(" · ")}</div>` : ""}
         ${r.obs ? `<div class="reg-obs">${esc(r.obs)}</div>` : ""}
       </div>
       <div class="reg-dir">
@@ -1133,6 +1250,7 @@ function cabecasDia(nome, ini, fim) {
 }
 
 function renderPainel() {
+  renderFaltasPainel();
   const hoje = hojeISO();
   const nDias = Number($("#p-periodo").value);
   const ini = somaDias(hoje, -nDias + 1);
@@ -1284,6 +1402,9 @@ function ligarEventos() {
   $("#add-animal").addEventListener("click", () => { const l = linhaAnimal(); $("#linhas-animais").appendChild(l); l.querySelector(".qtd").focus(); });
   $("#add-mineral").addEventListener("click", () => { const l = linhaMineral(); $("#linhas-mineral").appendChild(l); l.querySelector(".combo-in").focus(); });
   $("#btn-vazio").addEventListener("click", () => marcarVazio(!vazio));
+  $("#chave-falta").addEventListener("click", () => ligarBloco("falta", !blocoLigado("falta")));
+  $("#faltas-lista").addEventListener("click", (e) => { const b = e.target.closest("[data-falta]"); if (b) alternarFalta(b); });
+  $("#p-faltas").addEventListener("click", (e) => { const b = e.target.closest("[data-reposto]"); if (b) marcarReposto(b.dataset.reposto); });
   form().addEventListener("click", (e) => {
     const rem = e.target.closest("[data-remover]");
     if (rem) { rem.closest(".linha").remove(); return; }
@@ -1302,7 +1423,12 @@ function ligarEventos() {
   document.addEventListener("focusout", (e) => {
     if (!e.target.matches?.(".combo-in")) return;
     const inp = e.target;
-    setTimeout(() => { if (document.activeElement !== inp) { acertarCombo(inp); fecharCombos(); } }, 150);
+    setTimeout(() => {
+      if (document.activeElement === inp) return;
+      acertarCombo(inp);
+      fecharCombos();
+      if (inp.closest("#falta-combo")) adicionarFaltaDoCombo(inp);
+    }, 150);
   });
   // Tocar numa opção não tira o foco do campo antes da escolha
   document.addEventListener("pointerdown", (e) => { if (e.target.closest(".combo-lista")) e.preventDefault(); });
@@ -1314,6 +1440,7 @@ function ligarEventos() {
     inp.classList.remove("erro");
     fecharCombos();
     inp.blur();
+    if (inp.closest("#falta-combo")) adicionarFaltaDoCombo(inp);
   });
 
   // Listas
@@ -1346,7 +1473,7 @@ function ligarEventos() {
     sincronizar();
     if (!$("#tab-registro").hidden && !potSel) atualizarGps(true);
   });
-  setInterval(() => (pendentes().length || alteracoes.length) && sincronizar(), 2 * 60_000);
+  setInterval(() => totalPendente() && sincronizar(), 2 * 60_000);
 }
 
 async function iniciar() {
@@ -1357,6 +1484,8 @@ async function iniciar() {
   registros = await db.todos();
   catalogo = (await db.ler("catalogo")) || structuredClone(CATALOGO_INICIAL);
   alteracoes = (await db.ler("alteracoes")) || [];
+  faltas = (await db.ler("faltas")) || [];
+  $("#falta-combo").appendChild(combo("mineral"));
   ligarEventos();
   limparForm();
   renderTudo();
