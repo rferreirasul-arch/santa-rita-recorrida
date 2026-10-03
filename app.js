@@ -1334,7 +1334,7 @@ function renderPainel() {
 // =====================================================================
 // Navegação e inicialização
 // =====================================================================
-const TITULOS = { registro: "Recorrida", lotacao: "Lotação dos potreiros", consulta: "Consulta", painel: "Painel" };
+const TITULOS = { registro: "Recorrida", lotacao: "Lotação dos potreiros", consulta: "Registros", painel: "Painel" };
 
 function mostrarAba(nome) {
   $$(".tab").forEach((t) => (t.hidden = t.id !== `tab-${nome}`));

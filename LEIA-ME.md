@@ -16,7 +16,7 @@ Celular (app instalado)  ──►  Google Apps Script  ──►  Planilha "San
 |---|---|
 | **Registro** | Escolhe o potreiro (próximos pelo GPS ou busca por parte do nome, sem acento/maiúscula), marca a localização dos cochos, informa animais e/ou mineral |
 | **Lotação** | Animais em cada potreiro pela última recorrida com contagem. Tocar num potreiro abre o registro dele |
-| **Consulta** | Recorridas lançadas, com filtros, edição, exclusão e CSV |
+| **Registros** | Recorridas lançadas, com filtros, edição, exclusão e CSV |
 | **Painel** | Animais hoje, sacos e kg no período, mineral por produto, consumo estimado (g/cab/dia) e dias sem abastecer |
 
 ## Planilha
