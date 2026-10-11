@@ -479,6 +479,24 @@ function estadoPotreiros() {
 }
 
 const totalAnimais = (r) => (r?.lotacao === "conferida" ? (r.animais || []).reduce((s, a) => s + Number(a.qtd || 0), 0) : 0);
+// Totais da lotação por espécie: { Bovinos: 85, Ovinos: 12 }
+function porEspecie(r) {
+  const t = {};
+  if (r?.lotacao === "conferida") (r.animais || []).forEach((a) => { const e = especieDe(a.categoria); t[e] = (t[e] || 0) + Number(a.qtd || 0); });
+  return t;
+}
+const ORDEM_ESPECIES = ["Bovinos", "Ovinos"];
+const ordemEspecie = (a, b) => ((ORDEM_ESPECIES.indexOf(a) + 1) || 99) - ((ORDEM_ESPECIES.indexOf(b) + 1) || 99) || a.localeCompare(b);
+const ABREV_ESPECIE = { Bovinos: "bov.", Ovinos: "ov.", Equinos: "eq.", Caprinos: "cap." };
+// Só bovinos: base da cabeça média e do consumo g/cab/dia
+const totalBovinos = (r) => porEspecie(r).Bovinos || 0;
+// "85 bovinos · 12 ovinos" (ou "85 bov. · 12 ov." no formato curto)
+function txtEspecies(r, curto = false) {
+  const t = porEspecie(r);
+  const nomes = Object.keys(t).filter((e) => t[e] > 0).sort(ordemEspecie);
+  if (!nomes.length) return `0 ${curto ? "animais" : "animais"}`;
+  return nomes.map((e) => `${fmtNum(t[e])} ${curto ? (ABREV_ESPECIE[e] || e.toLowerCase()) : e.toLowerCase()}`).join(" · ");
+}
 const txtAnimais = (r) => (r.lotacao === "vazio" ? "Potreiro vazio" : (r.animais || []).map((a) => `${fmtQ(a.qtd)} ${a.categoria}`).join(" · "));
 const txtMinerais = (r) => (r.minerais || []).map((m) => `${fmtQ(m.sacos)} sc ${m.mineral}`).join(" · ");
 
@@ -493,7 +511,7 @@ function renderPotLista() {
   const lista = catalogo.potreiros.filter((p) => p.ativo !== false).map((p) => ({ p, d: distanciaPotreiro(p) }));
   const item = ({ p, d }) => {
     const lot = estado.get(norm(p.nome))?.lotacao;
-    const sub = lot ? (lot.lotacao === "vazio" ? "Vazio" : `${fmtNum(totalAnimais(lot))} animais`) : "";
+    const sub = lot ? (lot.lotacao === "vazio" ? "Vazio" : txtEspecies(lot)) : "";
     return `<button type="button" class="pot-item ${d?.aqui ? "aqui" : ""}" data-pot="${esc(p.nome)}">
       <span><b>${esc(p.nome)}</b>${sub ? `<small>${sub}</small>` : ""}</span>
       <span class="dist">${fmtDist(d)}</span></button>`;
@@ -1194,10 +1212,12 @@ function renderLotacao() {
   });
 
   const ocupados = linhas.filter((l) => l.grupo === "ocupados");
-  const total = ocupados.reduce((s, l) => s + l.total, 0);
+  const totEsp = {};
+  ocupados.forEach((l) => Object.entries(porEspecie(l.lot)).forEach(([e, n]) => { totEsp[e] = (totEsp[e] || 0) + n; }));
+  if (!totEsp.Bovinos) totEsp.Bovinos = 0;
   const kpi = (v, r, extra = "") => `<div class="kpi"><b>${v}</b><span>${r}</span>${extra ? `<small>${extra}</small>` : ""}</div>`;
   $("#lot-kpis").innerHTML = [
-    kpi(fmtNum(total), "Animais"),
+    ...Object.keys(totEsp).filter((e) => e === "Bovinos" || totEsp[e] > 0).sort(ordemEspecie).map((e) => kpi(fmtNum(totEsp[e]), e)),
     kpi(ocupados.length, "Ocupados"),
     kpi(linhas.filter((l) => l.grupo === "vazios").length, "Vazios"),
     kpi(linhas.filter((l) => l.grupo === "sem").length, "Sem info"),
@@ -1214,7 +1234,7 @@ function renderLotacao() {
   // Tabela compacta: Potreiro | Animais | Última atualização (tocar na linha abre o registro)
   const linha = (l) => {
     const animais = l.grupo === "ocupados"
-      ? `<b>${fmtNum(l.total)}</b>${l.lot.animais.length ? `<small>${esc(txtAnimais(l.lot))}</small>` : ""}`
+      ? `${totaisLinha(l.lot)}${l.lot.animais.length ? `<small>${esc(txtAnimais(l.lot))}</small>` : ""}`
       : l.grupo === "vazios" ? `<span class="t-vazio">Vazio</span>` : "–";
     const velho = l.lot && diasEntre(l.lot.data, hoje) > DIAS_LOTACAO_VELHA;
     const data = l.lot ? `${fmtData(l.lot.data).slice(0, 6)}${l.lot.data.slice(2, 4)}<small class="${velho ? "velho" : ""}">${haDias(l.lot.data)}</small>` : "–";
@@ -1231,6 +1251,15 @@ function renderLotacao() {
   $("#lot-lista").innerHTML = vis.length
     ? tabela("Com informação", vis.filter((l) => l.grupo !== "sem")) + tabela("Sem informação", vis.filter((l) => l.grupo === "sem"))
     : `<p class="vazio card">Nenhum potreiro encontrado.</p>`;
+}
+
+// Totais da linha da Lotação: "85 bov." à esquerda e "12 ov." à direita (só se houver)
+function totaisLinha(lot) {
+  const t = porEspecie(lot);
+  const bov = `<b>${fmtNum(t.Bovinos || 0)} bov.</b>`;
+  const outros = Object.keys(t).filter((e) => e !== "Bovinos" && t[e] > 0).sort(ordemEspecie)
+    .map((e) => `<b>${fmtNum(t[e])} ${ABREV_ESPECIE[e] || esc(e.toLowerCase())}</b>`).join(" ");
+  return `<div class="t-tot">${bov}${outros ? `<span>${outros}</span>` : ""}</div>`;
 }
 
 function irParaPotreiro(nome) {
@@ -1258,7 +1287,7 @@ function cabecasDia(nome, ini, fim) {
   for (let d = ini; d <= fim; d = somaDias(d, 1)) {
     while (i < lots.length && lots[i].data <= d) atual = lots[i++];
     if (!atual) continue;
-    soma += totalAnimais(atual);
+    soma += totalBovinos(atual);
     dias++;
   }
   return { soma, dias };
