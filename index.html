@@ -104,11 +104,14 @@
 
         <!-- Animais -->
         <div class="bloco" id="bloco-animais">
-          <button type="button" class="chave" id="chave-animais" aria-pressed="false">
-            <span class="num">2</span>
-            <span class="chave-txt">Conferi os animais <small>lotação do potreiro</small></span>
-            <span class="interruptor" aria-hidden="true"></span>
-          </button>
+          <div class="chave-linha">
+            <button type="button" class="chave" id="chave-animais" aria-pressed="false">
+              <span class="num">2</span>
+              <span class="chave-txt">Conferi os animais <small>lotação do potreiro</small></span>
+              <span class="interruptor" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="btn-vazio" id="btn-vazio" aria-pressed="false" title="Potreiro vazio">Vazio</button>
+          </div>
           <div class="bloco-corpo" id="corpo-animais" hidden>
             <p id="dica-animais" class="dica"></p>
             <div id="linhas-animais" class="linhas"></div>
@@ -117,9 +120,8 @@
               <span class="muted-s">Adicionar categoria</span>
             </div>
             <div id="aviso-vazio" class="aviso-vazio" hidden>
-              <b>Potreiro vazio.</b> Será registrado que não há animais aqui.
+              <b>Potreiro vazio.</b> Será registrado que não há animais aqui. Toque em “Vazio” de novo para desfazer.
             </div>
-            <button type="button" class="btn-vazio" id="btn-vazio">Potreiro vazio</button>
           </div>
         </div>
 

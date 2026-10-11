@@ -33,8 +33,8 @@ const CATALOGO_INICIAL = {
   categorias: [
     ["Vacas", "vaca; vc"], ["Vacas com cria", "vaca com cria; vacas c cria; vc com cria"], ["Novilhas", "vaq; vaquilhona; vq"],
     ["Novilhos", "boi; bois"], ["Terneiros", "ternero; terneira"], ["Touros", "boluti; toro; touro"],
-    ["Ovelhas", ""], ["Cordeiros", ""], ["Borregas", ""], ["Carneiros", ""],
-  ].map(([nome, alternativos]) => ({ nome, alternativos, ativo: true })),
+    ["Ovelhas", "", "Ovino"], ["Cordeiros", "", "Ovino"], ["Borregas", "", "Ovino"], ["Carneiros", "", "Ovino"],
+  ].map(([nome, alternativos, especie = "Bov"]) => ({ nome, alternativos, ativo: true, especie })),
 };
 
 let registros = [];   // recorridas guardadas no aparelho (inclusive excluídas)
@@ -696,6 +696,18 @@ async function gravarCaptura() {
 // =====================================================================
 const listaDoTipo = (tipo) => (tipo === "categoria" ? catalogo.categorias : catalogo.minerais);
 
+// Espécie da categoria pela aba Categorias ("Bov" → Bovinos, "Ovino" → Ovinos)
+function especieDe(categoria) {
+  const c = catalogo.categorias.find((i) => mesmoNome(i.nome, categoria));
+  const e = String(c?.especie || "").trim();
+  const n = norm(e);
+  if (n.startsWith("bov")) return "Bovinos";
+  if (n.startsWith("ov")) return "Ovinos";
+  if (n.startsWith("equ")) return "Equinos";
+  if (n.startsWith("cap")) return "Caprinos";
+  return e || "Sem espécie";
+}
+
 function combo(tipo, valor = "") {
   const d = document.createElement("div");
   d.className = "combo";
@@ -801,8 +813,9 @@ function marcarVazio(v) {
   $("#linhas-animais").hidden = v;
   $("#add-animal").parentElement.hidden = v;
   $("#aviso-vazio").hidden = !v;
+  $("#dica-animais").hidden = v;
   $("#btn-vazio").classList.toggle("on", v);
-  $("#btn-vazio").textContent = v ? "Desfazer: o potreiro tem animais" : "Potreiro vazio";
+  $("#btn-vazio").setAttribute("aria-pressed", String(v));
   if (!v && !$("#linhas-animais").children.length) $("#linhas-animais").appendChild(linhaAnimal());
 }
 
@@ -1275,17 +1288,30 @@ function renderPainel() {
     if (!k) p.semKg = true;
   }));
 
-  let animaisHoje = 0, ocupados = 0;
-  const porCat = {};
+  // Animais de hoje somados por espécie (coluna Espécie da aba Categorias)
+  const porCat = {}, porEsp = {};
   estado.forEach((e) => {
     if (e.lotacao?.lotacao !== "conferida") return;
-    ocupados++;
-    e.lotacao.animais.forEach((a) => { animaisHoje += Number(a.qtd); porCat[a.categoria] = (porCat[a.categoria] || 0) + Number(a.qtd); });
+    const potsEsp = new Set();
+    e.lotacao.animais.forEach((a) => {
+      const q = Number(a.qtd) || 0;
+      const esp = especieDe(a.categoria);
+      porCat[a.categoria] = (porCat[a.categoria] || 0) + q;
+      (porEsp[esp] ||= { qtd: 0, pots: 0 }).qtd += q;
+      potsEsp.add(esp);
+    });
+    potsEsp.forEach((esp) => porEsp[esp].pots++);
   });
+  const ordemEsp = ["Bovinos", "Ovinos"];
+  const esps = Object.keys(porEsp).sort((a, b) => ((ordemEsp.indexOf(a) + 1) || 99) - ((ordemEsp.indexOf(b) + 1) || 99) || a.localeCompare(b));
+  if (!esps.length) esps.push("Bovinos", "Ovinos");
 
   const kpi = (v, r, extra = "") => `<div class="kpi"><b>${v}</b><span>${r}</span>${extra ? `<small>${extra}</small>` : ""}</div>`;
   $("#kpis").innerHTML = [
-    kpi(fmtNum(animaisHoje), "Animais hoje", `em ${ocupados} potreiros`),
+    ...esps.map((esp) => {
+      const e = porEsp[esp] || { qtd: 0, pots: 0 };
+      return kpi(fmtNum(e.qtd), `${esp} hoje`, `em ${e.pots} potreiro${e.pots === 1 ? "" : "s"}`);
+    }),
     kpi(base.length, "Recorridas", "no período"),
     kpi(fmtQ(sacos), "Sacos de mineral", "no período"),
     kpi(fmtNum(kg), "Kg de mineral", sacosSemKg ? `${fmtQ(sacosSemKg)} sc sem kg/saco` : "no período"),
@@ -1405,11 +1431,20 @@ function ligarEventos() {
   $("#np-nome").addEventListener("input", () => { $("#np-nome").classList.remove("erro"); conferirNovoPotreiro(); });
 
   // Blocos de animais e mineral
-  $("#chave-animais").addEventListener("click", () => ligarBloco("animais", !blocoLigado("animais")));
+  $("#chave-animais").addEventListener("click", () => {
+    const ligar = !blocoLigado("animais");
+    if (!ligar && vazio) marcarVazio(false);
+    ligarBloco("animais", ligar);
+  });
   $("#chave-mineral").addEventListener("click", () => ligarBloco("mineral", !blocoLigado("mineral")));
   $("#add-animal").addEventListener("click", () => { const l = linhaAnimal(); $("#linhas-animais").appendChild(l); l.querySelector(".qtd").focus(); });
   $("#add-mineral").addEventListener("click", () => { const l = linhaMineral(); $("#linhas-mineral").appendChild(l); l.querySelector(".combo-in").focus(); });
-  $("#btn-vazio").addEventListener("click", () => marcarVazio(!vazio));
+  // "Vazio" ao lado da chave: liga o bloco de animais já marcado como vazio
+  $("#btn-vazio").addEventListener("click", () => {
+    if (vazio) { marcarVazio(false); return; }
+    marcarVazio(true);
+    ligarBloco("animais", true);
+  });
   $("#chave-falta").addEventListener("click", () => ligarBloco("falta", !blocoLigado("falta")));
   $("#faltas-lista").addEventListener("click", (e) => { const b = e.target.closest("[data-falta]"); if (b) alternarFalta(b); });
   $("#p-faltas").addEventListener("click", (e) => { const b = e.target.closest("[data-reposto]"); if (b) marcarReposto(b.dataset.reposto); });

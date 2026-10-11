@@ -42,7 +42,8 @@ const CABECALHO_POTREIROS = [
   "Contorno (KML: lon,lat lon,lat …)",
 ];
 const CABECALHO_MINERAIS = ["Mineral", "Nomes alternativos", "Kg por saco", "Ativo (SIM/NÃO)"];
-const CABECALHO_CATEGORIAS = ["Categoria", "Nomes alternativos", "Ativo (SIM/NÃO)"];
+// Aba Categorias: a coluna "Espécie" (Bov, Ovino...) separa os totais do Painel
+const CABECALHO_CATEGORIAS = ["Espécie", "Categoria", "Nomes alternativos", "Ativo (SIM/NÃO)"];
 
 // Listas iniciais (vindas da aba "Lista" da planilha antiga "Controle sal mineral")
 const POTREIROS_INICIAIS = [
@@ -66,9 +67,9 @@ const MINERAIS_INICIAIS = [
   ["Ração", "rasão", ""],
 ];
 const CATEGORIAS_INICIAIS = [
-  ["Vacas", "vaca; vc"], ["Vacas com cria", "vaca com cria; vacas c cria; vc com cria"], ["Novilhas", "vaq; vaquilhona; vq"],
-  ["Novilhos", "boi; bois"], ["Terneiros", "ternero; terneira"], ["Touros", "boluti; toro; touro"],
-  ["Ovelhas", ""], ["Cordeiros", ""], ["Borregas", ""], ["Carneiros", ""],
+  ["Bov", "Vacas", "vaca; vc"], ["Bov", "Vacas com cria", "vaca com cria; vacas c cria; vc com cria"], ["Bov", "Novilhas", "vaq; vaquilhona; vq"],
+  ["Bov", "Novilhos", "boi; bois"], ["Bov", "Terneiros", "ternero; terneira"], ["Bov", "Touros", "boluti; toro; touro"],
+  ["Ovino", "Ovelhas", ""], ["Ovino", "Cordeiros", ""], ["Ovino", "Borregas", ""], ["Ovino", "Carneiros", ""],
 ];
 
 // ---------------------------------------------------------------------
@@ -108,7 +109,7 @@ function configurar() {
   const cat = ss.getSheetByName(ABA_CATEGORIAS) || ss.insertSheet(ABA_CATEGORIAS);
   if (cat.getLastRow() === 0) {
     cabecalho(cat, CABECALHO_CATEGORIAS);
-    cat.getRange(2, 1, CATEGORIAS_INICIAIS.length, 3).setValues(CATEGORIAS_INICIAIS.map((c) => [c[0], c[1], "SIM"]));
+    cat.getRange(2, 1, CATEGORIAS_INICIAIS.length, 4).setValues(CATEGORIAS_INICIAIS.map((c) => [c[0], c[1], c[2], "SIM"]));
     cat.setFrozenRows(1);
   }
 
@@ -296,7 +297,7 @@ function sincronizar_(recebidos, alteracoes, usuario, faltasRecebidas) {
       usuario: usuario,
       registros: base.lista,
       faltas: sincronizarFaltas_(faltasRecebidas || [], usuario),
-      catalogo: { potreiros: lerPotreiros_(), minerais: lerMinerais_(), categorias: lerLista_(ABA_CATEGORIAS) },
+      catalogo: { potreiros: lerPotreiros_(), minerais: lerMinerais_(), categorias: lerCategorias_() },
     };
   } finally {
     lock.releaseLock();
@@ -309,11 +310,11 @@ function sincronizar_(recebidos, alteracoes, usuario, faltasRecebidas) {
 const norm_ = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 const ehNao_ = (v) => { const a = String(v).trim().toUpperCase(); return a === "NÃO" || a === "NAO"; };
 
-function linhaPorNome_(sh, nome) {
+function linhaPorNome_(sh, nome, coluna) {
   const n = sh.getLastRow() - 1;
   if (n < 1) return null;
   const alvo = norm_(nome);
-  const col = sh.getRange(2, 1, n, 1).getValues();
+  const col = sh.getRange(2, coluna || 1, n, 1).getValues();
   for (let i = 0; i < n; i++) if (norm_(col[i][0]) === alvo) return i + 2;
   return null;
 }
@@ -327,11 +328,18 @@ function aplicarAlteracao_(a, usuario) {
   if (a.tipo === "potreiro" || a.tipo === "mineral" || a.tipo === "categoria") {
     const aba = { potreiro: ABA_POTREIROS, mineral: ABA_MINERAIS, categoria: ABA_CATEGORIAS }[a.tipo];
     const sh = ss.getSheetByName(aba);
-    if (linhaPorNome_(sh, nome)) return; // já existe
-    const linha = a.tipo === "mineral" ? [nome, "", "", "SIM"] : [nome, "", "SIM"];
+    const cc = a.tipo === "categoria" ? colunasCategorias_(sh) : null;
+    if (linhaPorNome_(sh, nome, cc ? cc.nome + 1 : 1)) return; // já existe
+    let linha = a.tipo === "mineral" ? [nome, "", "", "SIM"] : [nome, "", "SIM"];
+    if (cc) {
+      // Monta a linha pelo cabeçalho; a espécie fica em branco para preencher na planilha
+      linha = new Array(Math.max(sh.getLastColumn(), 3)).fill("");
+      linha[cc.nome] = nome;
+      if (cc.ativo >= 0) linha[cc.ativo] = "SIM";
+    }
     sh.appendRow(linha);
     const obs = "Incluído pelo app por " + usuario.email + " em " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm");
-    sh.getRange(sh.getLastRow(), 1).setNote(obs);
+    sh.getRange(sh.getLastRow(), cc ? cc.nome + 1 : 1).setNote(obs);
     return;
   }
 
@@ -383,12 +391,25 @@ function lerMinerais_() {
     .map((l) => ({ nome: String(l[0]).trim(), alternativos: String(l[1] || "").trim(), kg: Number(l[2]) || "", ativo: !ehNao_(l[3]) }));
 }
 
-function lerLista_(aba) {
-  const sh = SpreadsheetApp.getActive().getSheetByName(aba);
+// Posição (base 0) de cada coluna da aba Categorias, pelo cabeçalho.
+// Sem a coluna "Espécie", vale o formato antigo: Categoria | Nomes alternativos | Ativo.
+function colunasCategorias_(sh) {
+  const cab = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0].map(norm_);
+  const achar = (ini) => cab.findIndex((c) => c.indexOf(ini) === 0);
+  const especie = achar("especie");
+  const nome = achar("categoria");
+  if (nome < 0) return { especie: -1, nome: 0, alternativos: 1, ativo: 2 };
+  return { especie, nome, alternativos: achar("nomes alternativos"), ativo: achar("ativo") };
+}
+
+function lerCategorias_() {
+  const sh = SpreadsheetApp.getActive().getSheetByName(ABA_CATEGORIAS);
   if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, 3).getValues()
-    .filter((l) => String(l[0]).trim() !== "")
-    .map((l) => ({ nome: String(l[0]).trim(), alternativos: String(l[1] || "").trim(), ativo: !ehNao_(l[2]) }));
+  const c = colunasCategorias_(sh);
+  const v = (l, i) => (i >= 0 ? String(l[i] == null ? "" : l[i]).trim() : "");
+  return sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(sh.getLastColumn(), 3)).getValues()
+    .filter((l) => v(l, c.nome) !== "")
+    .map((l) => ({ nome: v(l, c.nome), alternativos: v(l, c.alternativos), ativo: !ehNao_(v(l, c.ativo)), especie: v(l, c.especie) }));
 }
 
 // ---------------------------------------------------------------------
