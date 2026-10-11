@@ -1373,17 +1373,18 @@ function renderPainel() {
 
   const semMin = [];
   estado.forEach((e) => {
-    if (e.lotacao?.lotacao !== "conferida") return;
-    semMin.push({ nome: e.lotacao.potreiro, total: totalAnimais(e.lotacao), ult: e.mineral?.data || "", dias: e.mineral ? diasEntre(e.mineral.data, hoje) : Infinity });
+    // Só bovinos: os ovinos não alcançam os cochos
+    if (e.lotacao?.lotacao !== "conferida" || !totalBovinos(e.lotacao)) return;
+    semMin.push({ nome: e.lotacao.potreiro, total: totalBovinos(e.lotacao), ult: e.mineral?.data || "", dias: e.mineral ? diasEntre(e.mineral.data, hoje) : Infinity });
   });
   semMin.sort((a, b) => b.dias - a.dias);
   $("#t-dias").innerHTML = semMin.length ? `
     <table>
-      <thead><tr><th>Potreiro</th><th class="n">Animais</th><th class="n">Último mineral</th><th class="n">Dias</th></tr></thead>
+      <thead><tr><th>Potreiro</th><th class="n">Bovinos</th><th class="n">Último mineral</th><th class="n">Dias</th></tr></thead>
       <tbody>${semMin.map((l) => `<tr><td>${esc(l.nome)}</td><td class="n">${fmtNum(l.total)}</td>
         <td class="n">${l.ult ? fmtData(l.ult) : "nunca"}</td>
         <td class="n ${l.dias > DIAS_SEM_MINERAL ? "alerta" : ""}">${isFinite(l.dias) ? l.dias : "–"}</td></tr>`).join("")}</tbody>
-    </table>` : `<p class="vazio">Nenhum potreiro com animais registrados.</p>`;
+    </table>` : `<p class="vazio">Nenhum potreiro com bovinos registrados.</p>`;
 }
 
 // =====================================================================
