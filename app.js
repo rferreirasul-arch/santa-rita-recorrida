@@ -739,7 +739,9 @@ function abrirCombo(inp, filtrar) {
   const box = inp.parentElement;
   const tipo = box.dataset.tipo;
   const q = filtrar ? inp.value : "";
-  const itens = listaDoTipo(tipo).filter((i) => i.ativo !== false && combina(i, q)).sort(porNome);
+  // Categorias na sequência da aba Categorias; minerais em ordem alfabética
+  const itens = listaDoTipo(tipo).filter((i) => i.ativo !== false && combina(i, q));
+  if (tipo !== "categoria") itens.sort(porNome);
   let html = itens.map((i) => {
     const extra = tipo === "mineral" && i.kg ? `<small>${i.kg} kg/sc</small>` : "";
     return `<button type="button" data-opcao="${esc(i.nome)}" class="${mesmoNome(i.nome, inp.value) ? "sel" : ""}">${esc(i.nome)}${extra}</button>`;
@@ -904,6 +906,7 @@ function lerLinhas(qual) {
 // Falta de mineral no depósito
 // =====================================================================
 let faltaSel = new Set(); // minerais marcados como em falta nesta recorrida
+let repostoSel = new Set(); // ids de faltas abertas desmarcadas nesta recorrida (viram "reposto" ao salvar)
 
 // Mostra os minerais do potreiro (em falta, usados nos últimos dias ou nas linhas
 // de mineral acima) com uma chave liga/desliga cada
@@ -917,15 +920,24 @@ function renderFaltas() {
   faltaSel.forEach(add);
   $("#faltas-lista").innerHTML = nomes.map((n) => {
     const aberta = abertas.find((f) => mesmoNome(f.mineral, n));
-    const on = !!aberta || faltaSel.has(n);
-    const info = aberta ? `<small>em falta desde ${fmtData(aberta.data)} · para tirar, marque “Reposto” no Painel</small>` : "";
-    return `<button type="button" class="falta-item ${aberta ? "aberta" : ""}" data-falta="${esc(n)}" ${aberta ? 'data-aberta="1"' : ""} aria-pressed="${on}">
+    const desmarcada = aberta && repostoSel.has(aberta.id);
+    const on = aberta ? !desmarcada : faltaSel.has(n);
+    const info = !aberta ? ""
+      : desmarcada ? `<small>em falta desde ${fmtData(aberta.data)} · ao salvar, fica como reposto nesta data</small>`
+      : `<small>em falta desde ${fmtData(aberta.data)} · desmarque se já tem no depósito ou não precisa mais</small>`;
+    return `<button type="button" class="falta-item ${aberta && !desmarcada ? "aberta" : ""}" data-falta="${esc(n)}" ${aberta ? `data-aberta="${esc(aberta.id)}"` : ""} aria-pressed="${on}">
       <span class="fi-nome">${esc(n)}${info}</span><span class="interruptor" aria-hidden="true"></span></button>`;
   }).join("") || `<p class="muted-s">Nenhum mineral usado aqui recentemente. Escolha abaixo.</p>`;
 }
 
 function alternarFalta(btn) {
-  if (btn.dataset.aberta) { toast("Já está registrado como em falta. Quando repuser, marque “Reposto” no Painel."); return; }
+  // Falta já aberta: desmarcar = reposto na data da recorrida (gravado ao salvar)
+  const id = btn.dataset.aberta;
+  if (id) {
+    if (repostoSel.has(id)) repostoSel.delete(id); else repostoSel.add(id);
+    renderFaltas();
+    return;
+  }
   const n = btn.dataset.falta;
   if (faltaSel.has(n)) faltaSel.delete(n); else faltaSel.add(n);
   renderFaltas();
@@ -955,6 +967,14 @@ function gravarFaltasDaRecorrida(rec, sel, agora) {
       Object.assign(f, { excluido: false, data: rec.data, potreiro: rec.potreiro, atualizado_em: agora, _pendente: true });
     }
   });
+  return db.salvar("faltas", faltas);
+}
+
+// Faltas abertas desmarcadas na recorrida: reposto na data da recorrida, como o botão do Painel
+function gravarRepostosDaRecorrida(rec, ids, agora) {
+  if (!ids.size) return;
+  faltas.filter((f) => ids.has(f.id) && !f.excluido && !f.reposto_em && mesmoNome(f.potreiro, rec.potreiro))
+    .forEach((f) => Object.assign(f, { reposto_em: rec.data, reposto_por: usuario?.email || "demo", atualizado_em: agora, _pendente: true }));
   return db.salvar("faltas", faltas);
 }
 
@@ -1008,6 +1028,7 @@ function limparForm() {
   ligarBloco("animais", false);
   ligarBloco("mineral", false);
   faltaSel = new Set();
+  repostoSel = new Set();
   ligarBloco("falta", false);
   $("#form-titulo").textContent = "Nova recorrida";
   $("#btn-salvar").textContent = "Salvar recorrida";
@@ -1069,7 +1090,8 @@ async function salvar(ev) {
   const comMineral = blocoLigado("mineral");
   const comFalta = blocoLigado("falta");
   if (!comAnimais && !comMineral && !comFalta) return falha("Ligue pelo menos uma opção: animais, mineral no cocho ou falta no depósito.");
-  if (comFalta && !faltaSel.size) return falha("Marque o mineral que está faltando no depósito (ou desligue a opção 4).");
+  const repostos = new Set([...repostoSel].filter((id) => faltasAbertas().some((f) => f.id === id && mesmoNome(f.potreiro, potSel))));
+  if (comFalta && !faltaSel.size && !repostos.size) return falha("Marque o mineral que está faltando no depósito, desmarque o que foi reposto (ou desligue a opção 4).");
 
   let animais = [];
   if (comAnimais && !vazio) {
@@ -1105,6 +1127,7 @@ async function salvar(ev) {
   };
   await db.gravar(rec);
   await gravarFaltasDaRecorrida(rec, comFalta ? faltaSel : new Set(), agora);
+  if (comFalta) await gravarRepostosDaRecorrida(rec, repostos, agora);
   registros = await db.todos();
   toast(antigo ? "Alterações salvas." : `Recorrida de ${rec.potreiro} registrada.`);
   limparForm();
