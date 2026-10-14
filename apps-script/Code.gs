@@ -277,12 +277,12 @@ function sincronizar_(recebidos, alteracoes, usuario, faltasRecebidas) {
         if (String(atual.atualizado_em) >= String(r.atualizado_em)) return; // a planilha já tem versão igual ou mais nova
         r.registrado_por = atual.registrado_por;
         r.criado_em = atual.criado_em;
-        r.alterado_por = usuario.email;
+        r.alterado_por = usuario.nome;
         r.sincronizado_em = agora;
         sh.getRange(pos + 2, 1, 1, cab.length).setValues([paraLinha_(r, cab, kgSaco)]);
         base.lista[pos] = r;
       } else {
-        r.registrado_por = usuario.email; // quem enviou, conferido pelo login
+        r.registrado_por = usuario.nome; // quem enviou, conferido pelo login (nome da aba Usuarios)
         r.alterado_por = "";
         r.sincronizado_em = agora;
         base.indice[r.id] = base.lista.length;
@@ -338,7 +338,7 @@ function aplicarAlteracao_(a, usuario) {
       if (cc.ativo >= 0) linha[cc.ativo] = "SIM";
     }
     sh.appendRow(linha);
-    const obs = "Incluído pelo app por " + usuario.email + " em " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm");
+    const obs = "Incluído pelo app por " + usuario.nome + " em " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm");
     sh.getRange(sh.getLastRow(), cc ? cc.nome + 1 : 1).setNote(obs);
     return;
   }
@@ -355,7 +355,7 @@ function aplicarAlteracao_(a, usuario) {
     const lat = Number(a.lat), lon = Number(a.lon);
     if (!isFinite(lat) || !isFinite(lon)) return;
     sh.getRange(linha, col, 1, 4).setValues([[
-      lat.toFixed(6) + ", " + lon.toFixed(6), Math.round(Number(a.precisao) || 0), usuario.email, em,
+      lat.toFixed(6) + ", " + lon.toFixed(6), Math.round(Number(a.precisao) || 0), usuario.nome, em,
     ]]);
   }
 }
@@ -575,12 +575,12 @@ function sincronizarFaltas_(recebidas, usuario) {
       if (String(atual.atualizado_em) >= String(f.atualizado_em)) return;
       f.registrado_por = atual.registrado_por;
       f.criado_em = atual.criado_em;
-      if (f.reposto_em && !atual.reposto_em) f.reposto_por = usuario.email;
+      if (f.reposto_em && !atual.reposto_em) f.reposto_por = usuario.nome;
       sh.getRange(pos + 2, 1, 1, COLUNAS_FALTAS.length).setValues([linhaFalta_(f)]);
       lista[pos] = f;
     } else {
-      f.registrado_por = usuario.email;
-      if (f.reposto_em) f.reposto_por = usuario.email;
+      f.registrado_por = usuario.nome;
+      if (f.reposto_em) f.reposto_por = usuario.nome;
       indice[f.id] = lista.length;
       lista.push(f);
       novas.push(linhaFalta_(f));
