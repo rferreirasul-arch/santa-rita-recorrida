@@ -245,8 +245,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .card-falta h3 { color: var(--perda); }
 .pf-grupo { border-top: 1px solid var(--line); padding: 10px 0; }
 .pf-grupo:first-child { border-top: 0; padding-top: 0; }
-.pf-min { font-weight: 700; font-size: 1.02rem; margin-bottom: 4px; }
-.pf-foto { height: 44px; width: auto; vertical-align: middle; margin-left: 6px; }
+.pf-min { font-weight: 700; font-size: 1.02rem; margin-bottom: 4px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.pf-foto { height: 88px; width: auto; }
 .pf-linha { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 4px 0; font-size: .95rem; }
 .pf-linha small { display: block; color: var(--muted); font-size: .8rem; }
 .pf-linha .pend { color: var(--aviso); }

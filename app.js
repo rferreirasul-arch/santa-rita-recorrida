@@ -1006,7 +1006,7 @@ function renderFaltasPainel() {
   abertas.forEach((f) => (grupos[f.mineral] ||= []).push(f));
   $("#p-faltas").innerHTML = Object.entries(grupos).map(([mineral, fs]) => `
     <div class="pf-grupo">
-      <div class="pf-min">${esc(mineral)}${fotoMineral(mineral)} <span class="muted-s">(${fs.length} potreiro${fs.length > 1 ? "s" : ""})</span></div>
+      <div class="pf-min"><span>${esc(mineral)} <span class="muted-s">(${fs.length} potreiro${fs.length > 1 ? "s" : ""})</span></span>${fotoMineral(mineral)}</div>
       ${fs.map((f) => `<div class="pf-linha">
         <span>${esc(f.potreiro)}<small>desde ${fmtData(f.data)} (${haDias(f.data)}) · ${esc(quem(f.registrado_por))}${f._pendente ? ' · <span class="pend">aguardando envio</span>' : ""}</small></span>
         <button type="button" class="btn-light" data-reposto="${esc(f.id)}">Reposto</button>
