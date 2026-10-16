@@ -990,7 +990,10 @@ async function marcarReposto(id) {
 }
 
 // Fotos dos minerais (img/minerais/<nome sem acento, com hífen>.png). Incluir o nome aqui ao adicionar uma foto.
-const FOTOS_MINERAIS = new Set(["aveia-azevem"]);
+const FOTOS_MINERAIS = new Set([
+  "advance", "aveia-azevem", "bovigold-pasto", "energetico-25-m", "engorda", "fosbovinho-ade",
+  "pampero", "pasto-crina", "proteico-30-m", "reproducao", "seca",
+]);
 function fotoMineral(nome) {
   const slug = norm(nome).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   return FOTOS_MINERAIS.has(slug) ? `<img class="pf-foto" src="img/minerais/${slug}.png" alt="" loading="lazy">` : "";
