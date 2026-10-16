@@ -989,6 +989,13 @@ async function marcarReposto(id) {
   sincronizar();
 }
 
+// Fotos dos minerais (img/minerais/<nome sem acento, com hífen>.png). Incluir o nome aqui ao adicionar uma foto.
+const FOTOS_MINERAIS = new Set(["aveia-azevem"]);
+function fotoMineral(nome) {
+  const slug = norm(nome).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return FOTOS_MINERAIS.has(slug) ? `<img class="pf-foto" src="img/minerais/${slug}.png" alt="" loading="lazy">` : "";
+}
+
 function renderFaltasPainel() {
   const abertas = faltasAbertas().sort((a, b) => a.mineral.localeCompare(b.mineral, "pt-BR") || a.data.localeCompare(b.data));
   if (!abertas.length) { $("#p-faltas").innerHTML = `<p class="vazio">Nenhum mineral em falta no depósito.</p>`; return; }
@@ -996,7 +1003,7 @@ function renderFaltasPainel() {
   abertas.forEach((f) => (grupos[f.mineral] ||= []).push(f));
   $("#p-faltas").innerHTML = Object.entries(grupos).map(([mineral, fs]) => `
     <div class="pf-grupo">
-      <div class="pf-min">${esc(mineral)} <span class="muted-s">(${fs.length} potreiro${fs.length > 1 ? "s" : ""})</span></div>
+      <div class="pf-min">${esc(mineral)}${fotoMineral(mineral)} <span class="muted-s">(${fs.length} potreiro${fs.length > 1 ? "s" : ""})</span></div>
       ${fs.map((f) => `<div class="pf-linha">
         <span>${esc(f.potreiro)}<small>desde ${fmtData(f.data)} (${haDias(f.data)}) · ${esc(quem(f.registrado_por))}${f._pendente ? ' · <span class="pend">aguardando envio</span>' : ""}</small></span>
         <button type="button" class="btn-light" data-reposto="${esc(f.id)}">Reposto</button>
@@ -1258,7 +1265,7 @@ function renderLotacao() {
   const linha = (l) => {
     const animais = l.grupo === "ocupados"
       ? `${totaisLinha(l.lot)}${l.lot.animais.length ? `<small>${esc(txtAnimais(l.lot))}</small>` : ""}`
-      : l.grupo === "vazios" ? `<span class="t-vazio">Vazio</span>` : "–";
+      : l.grupo === "vazios" ? `<span class="t-vazio">Vazio</span>` : `<span class="t-sem">Sem informação</span>`;
     const velho = l.lot && diasEntre(l.lot.data, hoje) > DIAS_LOTACAO_VELHA;
     const data = l.lot ? `${fmtData(l.lot.data).slice(0, 6)}${l.lot.data.slice(2, 4)}<small class="${velho ? "velho" : ""}">${haDias(l.lot.data)}</small>` : "–";
     return `<tr data-ir="${esc(l.p.nome)}"><td class="t-pot">${esc(l.p.nome)}</td><td class="t-ani">${animais}</td><td class="t-data">${data}</td></tr>`;
@@ -1272,7 +1279,7 @@ function renderLotacao() {
       </table>
     </div>` : "";
   $("#lot-lista").innerHTML = vis.length
-    ? tabela("Com informação", vis.filter((l) => l.grupo !== "sem")) + tabela("Sem informação", vis.filter((l) => l.grupo === "sem"))
+    ? tabela("Com animais", vis.filter((l) => l.grupo === "ocupados")) + tabela("Sem animais", vis.filter((l) => l.grupo !== "ocupados"))
     : `<p class="vazio card">Nenhum potreiro encontrado.</p>`;
 }
 

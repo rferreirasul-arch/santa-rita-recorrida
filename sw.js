@@ -1,11 +1,11 @@
 // Service worker: guarda o app no aparelho para abrir sem internet.
 // Com sinal, o app sempre pega a versão mais nova do GitHub. Aumente a VERSAO
 // só se adicionar ou remover arquivos da lista abaixo.
-const VERSAO = "srr-v5";
+const VERSAO = "srr-v6";
 const ARQUIVOS = [
   "./", "index.html", "styles.css", "app.js", "config.js", "manifest.webmanifest",
   "privacidade.html", "img/logo.svg", "img/logo-branco.svg", "img/fundo-topo.jpg", "img/fundo-entrada.jpg",
-  "img/icon-180.png", "img/icon-192.png", "img/icon-512.png",
+  "img/minerais/aveia-azevem.png", "img/icon-180.png", "img/icon-192.png", "img/icon-512.png",
 ];
 
 self.addEventListener("install", (e) => {

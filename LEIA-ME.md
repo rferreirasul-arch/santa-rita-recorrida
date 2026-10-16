@@ -56,3 +56,30 @@ A função `configurar` cria todas as abas e já preenche Potreiros, Minerais e 
 
 Enviar tudo desta pasta. A pasta `apps-script/` e este arquivo podem ir junto (não têm segredo).
 Ao incluir ou remover arquivos, aumentar `VERSAO` no `sw.js`.
+
+## Cópia diária no Dropbox
+
+Todo dia, perto das **5h**, o Apps Script grava `Recorrida - consulta.xlsx` em
+`Dropbox/Fazenda Santa Rita -2023/Apps Santa Rita`, substituindo a versão anterior. A cópia é **só para consulta**:
+tem todas as abas, menos Usuarios e Aparelhos, e uma aba **Leia-me** com o link da planilha Google para quem
+precisar editar. A pessoa precisa ter acesso de edição à planilha Google.
+O código fica em `apps-script/Dropbox.gs` e usa a sua conta do Dropbox, que tem acesso de edição à pasta da fazenda.
+
+Configuração (uma vez só):
+
+1. **Apps Script** da planilha → **+** ao lado de Arquivos → **Script** → nome `Dropbox` → colar `Dropbox.gs` → salvar.
+   Não é preciso fazer nova implantação: o app continua igual.
+2. **Dropbox** → <https://www.dropbox.com/developers/apps> → **Create app** → *Scoped access* → *Full Dropbox* →
+   nome único (ex.: `Santa Rita Recorrida Exportacao`).
+   - Aba **Permissions**: marcar `files.content.write` → **Submit** (antes do passo 4).
+   - Aba **Settings**: anotar **App key** e **App secret**.
+3. Apps Script → **Configurações do projeto** (engrenagem) → **Propriedades do script**:
+   `DROPBOX_APP_KEY` e `DROPBOX_APP_SECRET`.
+4. Executar **`dropboxConectar`**. O registro de execução mostra um link: abrir → **Permitir** → copiar o código →
+   criar a propriedade `DROPBOX_CODIGO` com ele → executar `dropboxConectar` de novo ("Dropbox conectado").
+5. Executar **`exportarParaDropbox`**. O arquivo deve aparecer na pasta do Dropbox.
+6. Executar **`agendarExportacao`**. A partir daí roda sozinho todo dia.
+
+Na primeira execução o Google pede novas autorizações (Drive e agendamento). Se a exportação falhar,
+o Google manda e-mail para o dono do script. Para mudar a hora, troque `HORA_EXPORTACAO` e rode
+`agendarExportacao` de novo.
