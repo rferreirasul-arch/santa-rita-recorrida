@@ -1004,11 +1004,11 @@ function renderFaltasPainel() {
   if (!abertas.length) { $("#p-faltas").innerHTML = `<p class="vazio">Nenhum mineral em falta no depósito.</p>`; return; }
   const grupos = {};
   abertas.forEach((f) => (grupos[f.mineral] ||= []).push(f));
-  // Pela última lotação conferida: vazio ou sem bovinos (só ovinos, por exemplo)
+  // Pela última lotação conferida: vazio, sem bovinos (só ovinos, por exemplo) ou nunca conferido
   const estado = estadoPotreiros();
   const semBov = (pot) => {
     const lot = estado.get(norm(pot))?.lotacao;
-    if (!lot) return "";
+    if (!lot) return ' <span class="pf-aviso">sem informação de bovinos no potreiro</span>';
     if (lot.lotacao === "vazio") return ' <span class="pf-aviso">potreiro vazio</span>';
     return totalBovinos(lot) ? "" : ' <span class="pf-aviso">potreiro sem bovinos</span>';
   };
