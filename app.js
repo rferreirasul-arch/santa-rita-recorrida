@@ -1004,11 +1004,19 @@ function renderFaltasPainel() {
   if (!abertas.length) { $("#p-faltas").innerHTML = `<p class="vazio">Nenhum mineral em falta no depósito.</p>`; return; }
   const grupos = {};
   abertas.forEach((f) => (grupos[f.mineral] ||= []).push(f));
+  // Pela última lotação conferida: vazio ou sem bovinos (só ovinos, por exemplo)
+  const estado = estadoPotreiros();
+  const semBov = (pot) => {
+    const lot = estado.get(norm(pot))?.lotacao;
+    if (!lot) return "";
+    if (lot.lotacao === "vazio") return ' <span class="pf-aviso">potreiro vazio</span>';
+    return totalBovinos(lot) ? "" : ' <span class="pf-aviso">potreiro sem bovinos</span>';
+  };
   $("#p-faltas").innerHTML = Object.entries(grupos).map(([mineral, fs]) => `
     <div class="pf-grupo">
       <div class="pf-min"><span>${esc(mineral)} <span class="muted-s">(${fs.length} potreiro${fs.length > 1 ? "s" : ""})</span></span>${fotoMineral(mineral)}</div>
       ${fs.map((f) => `<div class="pf-linha">
-        <span>${esc(f.potreiro)}<small>desde ${fmtData(f.data)} (${haDias(f.data)}) · ${esc(quem(f.registrado_por))}${f._pendente ? ' · <span class="pend">aguardando envio</span>' : ""}</small></span>
+        <span>${esc(f.potreiro)}${semBov(f.potreiro)}<small>desde ${fmtData(f.data)} (${haDias(f.data)}) · ${esc(quem(f.registrado_por))}${f._pendente ? ' · <span class="pend">aguardando envio</span>' : ""}</small></span>
         <button type="button" class="btn-light" data-reposto="${esc(f.id)}">Reposto</button>
       </div>`).join("")}
     </div>`).join("");
