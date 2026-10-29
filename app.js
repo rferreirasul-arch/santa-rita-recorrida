@@ -1035,6 +1035,7 @@ function renderFaltasPainel() {
 // medicacao = { modo: "lote", qtd, itens: [{ dose, medicamento }] }
 //          ou { modo: "animais", animais: [{ brinco, motivo, itens: [{ dose, medicamento }] }] }
 let medModo = "lote";
+let tecladoBrinco = "numeric"; // "numeric" (padrão) ou "text"; vale para os próximos animais
 const fmtDose = (n) => String(n ?? "").replace(".", ",");
 
 function linhaMed(m = {}) {
@@ -1051,7 +1052,9 @@ function cartaoAnimalMed(a = {}) {
   const d = document.createElement("div");
   d.className = "med-animal";
   d.innerHTML = `<div class="med-animal-cab">
-      <label class="mini"><span>Brinco</span><input type="text" class="brinco" placeholder="Nº do brinco (opcional)" autocomplete="off" autocapitalize="characters"></label>
+      <label class="mini"><span>Brinco</span><span class="brinco-campo">
+        <input type="text" class="brinco" placeholder="Opcional" autocomplete="off" autocapitalize="characters" inputmode="${tecladoBrinco}">
+        <button type="button" class="btn-teclado" data-teclado aria-label="Trocar teclado">${tecladoBrinco === "numeric" ? "ABC" : "123"}</button></span></label>
       <button type="button" class="btn-x" data-remover-animal aria-label="Remover animal">×</button>
     </div>
     <label class="mini"><span>Motivo</span><input type="text" class="motivo" placeholder="Ex.: bicheira, pneumonia" autocomplete="off"></label>
@@ -1084,6 +1087,7 @@ function prepararMed() {
 }
 
 function limparMed() {
+  tecladoBrinco = "numeric";
   $("#linhas-med-lote").innerHTML = "";
   $("#lista-med-animais").innerHTML = "";
   mudarModoMed("lote");
@@ -1670,6 +1674,18 @@ function ligarEventos() {
   $("#add-med-lote").addEventListener("click", () => { const l = linhaMed(); $("#linhas-med-lote").appendChild(l); l.querySelector(".dose").focus(); });
   $("#add-med-animal").addEventListener("click", () => { const c = cartaoAnimalMed(); $("#lista-med-animais").appendChild(c); c.querySelector(".brinco").focus(); });
   $("#lista-med-animais").addEventListener("click", (e) => {
+    // Troca o teclado do brinco entre números e letras (reabre o teclado já trocado)
+    const tec = e.target.closest("[data-teclado]");
+    if (tec) {
+      e.preventDefault();
+      tecladoBrinco = tecladoBrinco === "numeric" ? "text" : "numeric";
+      $$("#lista-med-animais .brinco").forEach((i) => i.setAttribute("inputmode", tecladoBrinco));
+      $$("#lista-med-animais [data-teclado]").forEach((b) => { b.textContent = tecladoBrinco === "numeric" ? "ABC" : "123"; });
+      const inp = tec.parentElement.querySelector(".brinco");
+      inp.blur();
+      setTimeout(() => inp.focus(), 60);
+      return;
+    }
     const rem = e.target.closest("[data-remover-animal]");
     if (rem) { rem.closest(".med-animal").remove(); return; }
     const add = e.target.closest("[data-add-med]");

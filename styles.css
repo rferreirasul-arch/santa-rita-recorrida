@@ -247,7 +247,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .med-animal { border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; background: #fff; }
 .med-animal-cab { display: grid; grid-template-columns: 1fr 36px; gap: 8px; align-items: end; }
 .mini { display: flex; flex-direction: column; gap: 3px; }
-.mini span { font-size: .78rem; color: var(--muted); font-weight: 700; }
+.mini > span:first-child { font-size: .78rem; color: var(--muted); font-weight: 700; }
+.brinco-campo { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+.btn-teclado { min-width: 52px; border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 10px; font-weight: 700; font-size: .8rem; letter-spacing: .04em; }
 .med-animal .brinco { font-weight: 700; }
 .med-animal .linha-acoes { margin-top: 2px; }
 .btn-mais.btn-mais-s { width: 36px; height: 36px; font-size: 1.3rem; }
