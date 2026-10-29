@@ -30,6 +30,7 @@ const CATALOGO_INICIAL = {
     ["Proteico 30 M", "proteico; P30", 30], ["Reprodução", "", 30], ["Seca", "", 30], ["Pasto Crina", "pasto e crina", 25],
     ["Ração", "rasão", ""],
   ].map(([nome, alternativos, kg]) => ({ nome, alternativos, kg, ativo: true })),
+  medicamentos: [],
   categorias: [
     ["Vacas", "vaca; vc"], ["Vacas com cria", "vaca com cria; vacas c cria; vc com cria"], ["Novilhas", "vaq; vaquilhona; vq"],
     ["Novilhos", "boi; bois"], ["Terneiros", "ternero; terneira"], ["Touros", "boluti; toro; touro"],
@@ -326,11 +327,13 @@ function atualizarStatus() {
 // Cadastros feitos no aparelho (potreiro novo, cocho, categoria, mineral)
 // =====================================================================
 function aplicarAlteracao(cat, a) {
-  const lista = { potreiro: cat.potreiros, mineral: cat.minerais, categoria: cat.categorias }[a.tipo];
+  cat.medicamentos ||= [];
+  const lista = { potreiro: cat.potreiros, mineral: cat.minerais, categoria: cat.categorias, medicamento: cat.medicamentos }[a.tipo];
   if (lista) {
     if (!lista.some((i) => mesmoNome(i.nome, a.nome))) {
       lista.push(a.tipo === "potreiro"
         ? { nome: a.nome, alternativos: "", ativo: true, cochos: [null, null], contorno: "" }
+        : a.tipo === "medicamento" ? { nome: a.nome, alternativos: "", ativo: true, unidade: "mL" }
         : { nome: a.nome, alternativos: "", ativo: true, kg: "" });
     }
     return;
@@ -712,7 +715,9 @@ async function gravarCaptura() {
 // =====================================================================
 // Caixa de seleção com filtro (categoria e mineral)
 // =====================================================================
-const listaDoTipo = (tipo) => (tipo === "categoria" ? catalogo.categorias : catalogo.minerais);
+const listaDoTipo = (tipo) => (tipo === "categoria" ? catalogo.categorias : tipo === "medicamento" ? (catalogo.medicamentos ||= []) : catalogo.minerais);
+const NOME_TIPO = { categoria: "categoria", mineral: "mineral", medicamento: "medicamento" };
+const unidadeDe = (med) => acharItem(catalogo.medicamentos || [], med)?.unidade || "mL";
 
 // Espécie da categoria pela aba Categorias ("Bov" → Bovinos, "Ovino" → Ovinos)
 function especieDe(categoria) {
@@ -730,7 +735,7 @@ function combo(tipo, valor = "") {
   const d = document.createElement("div");
   d.className = "combo";
   d.dataset.tipo = tipo;
-  d.innerHTML = `<input type="text" class="combo-in" placeholder="${tipo === "categoria" ? "Categoria" : "Mineral"}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done">`;
+  d.innerHTML = `<input type="text" class="combo-in" placeholder="${{ categoria: "Categoria", mineral: "Mineral", medicamento: "Medicamento" }[tipo]}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done">`;
   d.firstChild.value = valor;
   return d;
 }
@@ -748,7 +753,7 @@ function abrirCombo(inp, filtrar) {
   }).join("");
   const v = inp.value.trim();
   if (filtrar && v && !acharItem(listaDoTipo(tipo), v)) {
-    html += `<button type="button" class="novo" data-novo-item="${esc(v)}">+ Adicionar ${tipo === "categoria" ? "categoria" : "mineral"} “${esc(v)}”</button>`;
+    html += `<button type="button" class="novo" data-novo-item="${esc(v)}">+ Adicionar ${NOME_TIPO[tipo]} “${esc(v)}”</button>`;
   }
   if (!html) html = `<button type="button" disabled>Nada encontrado</button>`;
   let lista = $(".combo-lista", box);
@@ -776,7 +781,8 @@ async function adicionarItem(tipo, nome) {
   nome = nome[0].toUpperCase() + nome.slice(1);
   if (!acharItem(listaDoTipo(tipo), nome)) {
     await registrarAlteracao({ tipo, nome });
-    toast(`${tipo === "categoria" ? "Categoria" : "Mineral"} “${nome}” adicionado à lista.`);
+    const rot = NOME_TIPO[tipo];
+    toast(`${rot[0].toUpperCase() + rot.slice(1)} “${nome}” adicionado à lista.`);
   }
   return nome;
 }
@@ -821,6 +827,7 @@ function ligarBloco(qual, ligado) {
   chave.setAttribute("aria-pressed", String(ligado));
   $(`#corpo-${qual}`).hidden = !ligado;
   if (qual === "falta") { renderFaltas(); return; }
+  if (qual === "med") { if (ligado) prepararMed(); return; }
   const linhas = $(`#linhas-${qual === "animais" ? "animais" : "mineral"}`);
   if (ligado && !linhas.children.length && !(qual === "animais" && vazio)) {
     linhas.appendChild(qual === "animais" ? linhaAnimal() : linhaMineral());
@@ -1023,13 +1030,147 @@ function renderFaltasPainel() {
 }
 
 // =====================================================================
+// Medicamentos (bloco 5): todo o lote ou animais específicos
+// =====================================================================
+// medicacao = { modo: "lote", qtd, itens: [{ dose, medicamento }] }
+//          ou { modo: "animais", animais: [{ brinco, motivo, itens: [{ dose, medicamento }] }] }
+let medModo = "lote";
+const fmtDose = (n) => String(n ?? "").replace(".", ",");
+
+function linhaMed(m = {}) {
+  const d = document.createElement("div");
+  d.className = "linha linha-med";
+  d.innerHTML = `<input type="text" class="qtd dose" inputmode="decimal" placeholder="Dose" aria-label="Dose" autocomplete="off">
+    <span></span><button type="button" class="btn-x" data-remover aria-label="Remover">×</button>`;
+  d.querySelector(".dose").value = fmtDose(m.dose);
+  d.replaceChild(combo("medicamento", m.medicamento || ""), d.children[1]);
+  return d;
+}
+
+function cartaoAnimalMed(a = {}) {
+  const d = document.createElement("div");
+  d.className = "med-animal";
+  d.innerHTML = `<div class="med-animal-cab">
+      <label class="mini"><span>Brinco</span><input type="text" class="brinco" placeholder="Nº do brinco" autocomplete="off" autocapitalize="characters"></label>
+      <button type="button" class="btn-x" data-remover-animal aria-label="Remover animal">×</button>
+    </div>
+    <label class="mini"><span>Motivo</span><input type="text" class="motivo" placeholder="Ex.: bicheira, pneumonia" autocomplete="off"></label>
+    <div class="med-cab"><span>Dose</span><span>Medicamento</span></div>
+    <div class="linhas linhas-med"></div>
+    <div class="linha-acoes"><button type="button" class="btn-mais btn-mais-s" data-add-med aria-label="Adicionar medicamento">+</button>
+      <span class="muted-s">Outro medicamento para este animal</span></div>`;
+  d.querySelector(".brinco").value = a.brinco || "";
+  d.querySelector(".motivo").value = a.motivo || "";
+  (a.itens?.length ? a.itens : [{}]).forEach((m) => d.querySelector(".linhas-med").appendChild(linhaMed(m)));
+  return d;
+}
+
+function mudarModoMed(modo) {
+  medModo = modo;
+  $$("[data-med-modo]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.medModo === modo)));
+  $("#med-lote").hidden = modo !== "lote";
+  $("#med-animais").hidden = modo !== "animais";
+  prepararMed();
+}
+
+// Garante uma linha em branco em cada modo e mostra quantos animais tem o lote
+function prepararMed() {
+  if (!$("#linhas-med-lote").children.length) $("#linhas-med-lote").appendChild(linhaMed());
+  if (!$("#lista-med-animais").children.length) $("#lista-med-animais").appendChild(cartaoAnimalMed());
+  const lot = potSel ? estadoPotreiros().get(norm(potSel))?.lotacao : null;
+  $("#dica-med").textContent = lot?.lotacao === "conferida"
+    ? `Lote: ${txtEspecies(lot)} (lotação de ${fmtData(lot.data)}). Se conferir os animais acima, vale a contagem nova.`
+    : "Sem lotação registrada para este potreiro: confira os animais acima para registrar quantos foram medicados.";
+}
+
+function limparMed() {
+  $("#linhas-med-lote").innerHTML = "";
+  $("#lista-med-animais").innerHTML = "";
+  mudarModoMed("lote");
+  $("#linhas-med-lote").innerHTML = "";
+  $("#lista-med-animais").innerHTML = "";
+  ligarBloco("med", false);
+}
+
+function preencherMed(med) {
+  $("#linhas-med-lote").innerHTML = "";
+  $("#lista-med-animais").innerHTML = "";
+  if (!med) { ligarBloco("med", false); return; }
+  if (med.modo === "animais") (med.animais || []).forEach((a) => $("#lista-med-animais").appendChild(cartaoAnimalMed(a)));
+  else (med.itens || []).forEach((m) => $("#linhas-med-lote").appendChild(linhaMed(m)));
+  mudarModoMed(med.modo === "animais" ? "animais" : "lote");
+  ligarBloco("med", true);
+}
+
+// Lê as linhas de dose + medicamento de um contêiner (linhas em branco são ignoradas)
+function lerItensMed(box) {
+  const itens = [];
+  let erro = null;
+  $$(".linha-med", box).forEach((l) => {
+    const dInp = l.querySelector(".dose");
+    const cInp = l.querySelector(".combo-in");
+    if (!dInp.value.trim() && !cInp.value.trim()) return;
+    const dose = numero(dInp.value);
+    const item = cInp.value.trim() && acharItem(listaDoTipo("medicamento"), cInp.value);
+    const ok = dInp.value.trim() && dose > 0;
+    dInp.classList.toggle("erro", !ok);
+    cInp.classList.toggle("erro", !item);
+    if (!ok || !item) { erro ||= !item ? cInp : dInp; return; }
+    itens.push({ dose, medicamento: item.nome });
+  });
+  return { itens, erro };
+}
+
+// qtdConferida: animais contados nesta recorrida (ou null para usar a última lotação)
+function lerMed(qtdConferida) {
+  const msgItens = "Confira os medicamentos: dose (número) e medicamento da lista.";
+  if (medModo === "lote") {
+    const r = lerItensMed($("#linhas-med-lote"));
+    if (r.erro) return { erro: r.erro, msg: msgItens };
+    if (!r.itens.length) return { erro: $("#linhas-med-lote .dose"), msg: "Informe a dose e o medicamento (ou desligue “Medicamentos”)." };
+    const lot = estadoPotreiros().get(norm(potSel))?.lotacao;
+    const qtd = qtdConferida ?? (lot?.lotacao === "conferida" ? totalAnimais(lot) : "");
+    return { med: { modo: "lote", qtd, itens: r.itens } };
+  }
+  const animais = [];
+  for (const c of $$("#lista-med-animais .med-animal")) {
+    const bInp = c.querySelector(".brinco");
+    const brinco = bInp.value.trim().toUpperCase();
+    const motivo = c.querySelector(".motivo").value.trim();
+    const r = lerItensMed(c);
+    if (!brinco && !motivo && !r.itens.length && !r.erro) continue; // cartão em branco
+    if (r.erro) return { erro: r.erro, msg: msgItens };
+    if (!brinco) { bInp.classList.add("erro"); return { erro: bInp, msg: "Informe o brinco do animal." }; }
+    if (!r.itens.length) return { erro: c.querySelector(".dose"), msg: `Informe a dose e o medicamento do brinco ${brinco}.` };
+    animais.push({ brinco, motivo, itens: r.itens });
+  }
+  if (!animais.length) return { erro: $("#lista-med-animais .brinco"), msg: "Informe o brinco, a dose e o medicamento (ou desligue “Medicamentos”)." };
+  return { med: { modo: "animais", animais } };
+}
+
+const txtItensMed = (itens) => (itens || []).map((m) => `${fmtDose(m.dose)} ${unidadeDe(m.medicamento)} ${m.medicamento}`).join(" + ");
+function txtMed(med) {
+  if (med.modo === "animais") return (med.animais || []).map((a) => `Brinco ${a.brinco}: ${txtItensMed(a.itens)}${a.motivo ? ` (${a.motivo})` : ""}`).join(" · ");
+  return `Lote${med.qtd ? ` (${fmtNum(med.qtd)} animais)` : ""}: ${txtItensMed(med.itens)}`;
+}
+
+// =====================================================================
 // Formulário
 // =====================================================================
 const form = () => $("#form");
 const campo = (nome) => form().elements[nome];
 
+// "Tem mineral": o cocho já tinha mineral nesta recorrida (só registro, sem sacos nem consumo)
+let temMineral = false;
+function marcarTemMineral(v) {
+  temMineral = v;
+  $("#btn-tem").classList.toggle("on", v);
+  $("#btn-tem").setAttribute("aria-pressed", String(v));
+}
+
 function limparForm() {
   editId = null;
+  marcarTemMineral(false);
   form().reset();
   campo("data").value = hojeISO();
   potSel = null;
@@ -1048,6 +1189,7 @@ function limparForm() {
   faltaSel = new Set();
   repostoSel = new Set();
   ligarBloco("falta", false);
+  limparMed();
   $("#form-titulo").textContent = "Nova recorrida";
   $("#btn-salvar").textContent = "Salvar recorrida";
   $("#btn-cancelar").hidden = true;
@@ -1070,6 +1212,8 @@ function editar(id) {
   (r.animais || []).forEach((a) => $("#linhas-animais").appendChild(linhaAnimal(a)));
   (r.minerais || []).forEach((m) => $("#linhas-mineral").appendChild(linhaMineral(m)));
   marcarVazio(r.lotacao === "vazio");
+  marcarTemMineral(!!r.tem_mineral);
+  preencherMed(r.medicacao);
   ligarBloco("animais", !!r.lotacao);
   ligarBloco("mineral", !!r.minerais?.length);
   faltaSel = new Set(faltasAtivas().filter((f) => f.recorrida_id === id).map((f) => f.mineral));
@@ -1107,7 +1251,8 @@ async function salvar(ev) {
   const comAnimais = blocoLigado("animais");
   const comMineral = blocoLigado("mineral");
   const comFalta = blocoLigado("falta");
-  if (!comAnimais && !comMineral && !comFalta) return falha("Ligue pelo menos uma opção: animais, mineral no cocho ou falta no depósito.");
+  const comMed = blocoLigado("med");
+  if (!comAnimais && !comMineral && !comFalta && !temMineral && !comMed) return falha("Ligue pelo menos uma opção: animais, mineral no cocho, tem mineral, falta no depósito ou medicamentos.");
   const repostos = new Set([...repostoSel].filter((id) => faltasAbertas().some((f) => f.id === id && mesmoNome(f.potreiro, potSel))));
   if (comFalta && !faltaSel.size && !repostos.size) return falha("Marque o mineral que está faltando no depósito, desmarque o que foi reposto (ou desligue a opção 4).");
 
@@ -1126,6 +1271,13 @@ async function salvar(ev) {
     minerais = r.itens;
   }
 
+  let medicacao = null;
+  if (comMed) {
+    const r = lerMed(comAnimais && !vazio ? animais.reduce((s, a) => s + Number(a.qtd), 0) : null);
+    if (r.erro) return falha(r.msg, r.erro);
+    medicacao = r.med;
+  }
+
   const agora = new Date().toISOString();
   const antigo = editId ? registros.find((r) => r.id === editId) : null;
   const rec = {
@@ -1136,6 +1288,8 @@ async function salvar(ev) {
     lotacao: comAnimais ? (vazio ? "vazio" : "conferida") : "",
     animais,
     minerais,
+    tem_mineral: temMineral,
+    medicacao,
     obs: campo("obs").value.trim(),
     registrado_por: antigo?.registrado_por || usuario?.email || "demo",
     criado_em: antigo?.criado_em || agora,
@@ -1163,6 +1317,8 @@ function cartao(r) {
     r.lotacao === "conferida" ? `<span class="badge">Lotação</span>` : "",
     r.lotacao === "vazio" ? `<span class="badge vazio">Vazio</span>` : "",
     r.minerais?.length ? `<span class="badge min">Mineral</span>` : "",
+    r.tem_mineral ? `<span class="badge">Tem mineral</span>` : "",
+    r.medicacao ? `<span class="badge med">Medicamento</span>` : "",
   ].join("");
   const fs = faltasAtivas().filter((f) => f.recorrida_id === r.id);
   const tot = totalAnimais(r);
@@ -1173,6 +1329,7 @@ function cartao(r) {
         <div class="reg-pot">${esc(r.potreiro)} ${badges}${fs.length ? `<span class="badge falta">Falta</span>` : ""}</div>
         ${r.lotacao ? `<div class="reg-linha"><i>Animais</i>${esc(txtAnimais(r))}${r.animais?.length > 1 ? ` <b>(${fmtNum(tot)})</b>` : ""}</div>` : ""}
         ${r.minerais?.length ? `<div class="reg-linha"><i>Mineral</i>${esc(txtMinerais(r))}</div>` : ""}
+        ${r.medicacao ? `<div class="reg-linha"><i>Medicamentos</i>${esc(txtMed(r.medicacao))}</div>` : ""}
         ${fs.length ? `<div class="reg-linha"><i>Falta no depósito</i>${fs.map((f) => esc(f.mineral) + (f.reposto_em ? " (reposto)" : "")).join(" · ")}</div>` : ""}
         ${r.obs ? `<div class="reg-obs">${esc(r.obs)}</div>` : ""}
       </div>
@@ -1508,6 +1665,17 @@ function ligarEventos() {
     ligarBloco("animais", ligar);
   });
   $("#chave-mineral").addEventListener("click", () => ligarBloco("mineral", !blocoLigado("mineral")));
+  $("#btn-tem").addEventListener("click", () => marcarTemMineral(!temMineral));
+  $("#chave-med").addEventListener("click", () => ligarBloco("med", !blocoLigado("med")));
+  $$("[data-med-modo]").forEach((b) => b.addEventListener("click", () => mudarModoMed(b.dataset.medModo)));
+  $("#add-med-lote").addEventListener("click", () => { const l = linhaMed(); $("#linhas-med-lote").appendChild(l); l.querySelector(".dose").focus(); });
+  $("#add-med-animal").addEventListener("click", () => { const c = cartaoAnimalMed(); $("#lista-med-animais").appendChild(c); c.querySelector(".brinco").focus(); });
+  $("#lista-med-animais").addEventListener("click", (e) => {
+    const rem = e.target.closest("[data-remover-animal]");
+    if (rem) { rem.closest(".med-animal").remove(); return; }
+    const add = e.target.closest("[data-add-med]");
+    if (add) { const l = linhaMed(); add.closest(".med-animal").querySelector(".linhas-med").appendChild(l); l.querySelector(".dose").focus(); }
+  });
   $("#add-animal").addEventListener("click", () => { const l = linhaAnimal(); $("#linhas-animais").appendChild(l); l.querySelector(".qtd").focus(); });
   $("#add-mineral").addEventListener("click", () => { const l = linhaMineral(); $("#linhas-mineral").appendChild(l); l.querySelector(".combo-in").focus(); });
   // "Vazio" ao lado da chave: liga o bloco de animais já marcado como vazio
@@ -1532,7 +1700,7 @@ function ligarEventos() {
   });
   document.addEventListener("input", (e) => {
     if (e.target.matches?.(".combo-in")) { e.target.classList.remove("erro"); abrirCombo(e.target, true); }
-    if (e.target.matches?.(".linha .qtd")) e.target.classList.remove("erro");
+    if (e.target.matches?.(".linha .qtd, .brinco")) e.target.classList.remove("erro");
   });
   document.addEventListener("focusout", (e) => {
     if (!e.target.matches?.(".combo-in")) return;

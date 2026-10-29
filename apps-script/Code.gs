@@ -14,6 +14,13 @@ const ABA_CATEGORIAS = "Categorias";
 const ABA_USUARIOS = "Usuarios";
 const ABA_APARELHOS = "Aparelhos";
 const ABA_FALTAS = "Faltas";
+const ABA_MEDICAMENTOS = "Medicamentos";   // cadastro dos medicamentos
+const ABA_MEDICACOES = "Medicações";       // eventos: uma linha por medicamento aplicado
+
+const CABECALHO_MEDICAMENTOS = ["Medicamento", "Nomes alternativos", "Unidade da dose", "Ativo (SIM/NÃO)"];
+// Lote inteiro: uma linha por medicamento. Animais: uma linha por medicamento + dose + motivo,
+// com os brincos juntos. As linhas de uma recorrida são refeitas a cada alteração dela.
+const CABECALHO_MEDICACOES = ["Data", "Potreiro", "Quantidade de animais", "Dose", "Unidade", "Medicamento", "Brincos", "Motivo", "Registrado por", "ID da recorrida"];
 
 // Aba Faltas: uma linha por mineral em falta no depósito de um potreiro
 const COLUNAS_FALTAS = ["id", "data", "potreiro", "mineral", "registrado_por", "criado_em", "reposto_em", "reposto_por", "atualizado_em", "excluido", "recorrida_id"];
@@ -33,6 +40,8 @@ const CABECALHO = [
 ];
 const PREFIXO_ANIMAIS = "Animais: ";
 const PREFIXO_SACOS = "Sacos: ";
+// Coluna extra (criada no fim, se faltar): "SIM" quando o cocho já tinha mineral
+const COL_TEM_MINERAL = "Tem mineral";
 const LOTACAO_TXT = { conferida: "Conferida", vazio: "Vazio", "": "Não conferida" };
 
 const CABECALHO_POTREIROS = [
@@ -121,6 +130,8 @@ function configurar() {
   }
   abaAparelhos_();
   abaFaltas_();
+  abaMedicamentos_();
+  abaMedicacoes_();
 
   const vazia = ss.getSheetByName("Página1") || ss.getSheetByName("Sheet1");
   if (vazia && vazia.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(vazia);
@@ -268,6 +279,7 @@ function sincronizar_(recebidos, alteracoes, usuario, faltasRecebidas) {
     const base = lerRegistros_(sh, cab);
     const agora = new Date().toISOString();
     const novos = [];
+    const tocados = []; // recorridas gravadas agora (refazem as linhas de medicação)
 
     recebidos.forEach((r) => {
       if (!r || !r.id) return;
@@ -281,6 +293,7 @@ function sincronizar_(recebidos, alteracoes, usuario, faltasRecebidas) {
         r.sincronizado_em = agora;
         sh.getRange(pos + 2, 1, 1, cab.length).setValues([paraLinha_(r, cab, kgSaco)]);
         base.lista[pos] = r;
+        tocados.push(r);
       } else {
         r.registrado_por = usuario.nome; // quem enviou, conferido pelo login (nome da aba Usuarios)
         r.alterado_por = "";
@@ -288,16 +301,19 @@ function sincronizar_(recebidos, alteracoes, usuario, faltasRecebidas) {
         base.indice[r.id] = base.lista.length;
         base.lista.push(r);
         novos.push(paraLinha_(r, cab, kgSaco));
+        tocados.push(r);
       }
     });
 
     if (novos.length) sh.getRange(sh.getLastRow() + 1, 1, novos.length, cab.length).setValues(novos);
+    const medicacoes = sincronizarMedicacoes_(tocados);
+    base.lista.forEach((r) => { r.medicacao = medicacoes[r.id] || null; });
     return {
       ok: true,
       usuario: usuario,
       registros: base.lista,
       faltas: sincronizarFaltas_(faltasRecebidas || [], usuario),
-      catalogo: { potreiros: lerPotreiros_(), minerais: lerMinerais_(), categorias: lerCategorias_() },
+      catalogo: { potreiros: lerPotreiros_(), minerais: lerMinerais_(), categorias: lerCategorias_(), medicamentos: lerMedicamentos_() },
     };
   } finally {
     lock.releaseLock();
@@ -325,12 +341,12 @@ function aplicarAlteracao_(a, usuario) {
   const nome = String(a.nome || a.potreiro || "").trim().slice(0, 80);
   if (!nome) return;
 
-  if (a.tipo === "potreiro" || a.tipo === "mineral" || a.tipo === "categoria") {
+  if (a.tipo === "potreiro" || a.tipo === "mineral" || a.tipo === "categoria" || a.tipo === "medicamento") {
     const aba = { potreiro: ABA_POTREIROS, mineral: ABA_MINERAIS, categoria: ABA_CATEGORIAS }[a.tipo];
-    const sh = ss.getSheetByName(aba);
+    const sh = a.tipo === "medicamento" ? abaMedicamentos_() : ss.getSheetByName(aba);
     const cc = a.tipo === "categoria" ? colunasCategorias_(sh) : null;
     if (linhaPorNome_(sh, nome, cc ? cc.nome + 1 : 1)) return; // já existe
-    let linha = a.tipo === "mineral" ? [nome, "", "", "SIM"] : [nome, "", "SIM"];
+    let linha = a.tipo === "mineral" ? [nome, "", "", "SIM"] : a.tipo === "medicamento" ? [nome, "", "mL", "SIM"] : [nome, "", "SIM"];
     if (cc) {
       // Monta a linha pelo cabeçalho; a espécie fica em branco para preencher na planilha
       linha = new Array(Math.max(sh.getLastColumn(), 3)).fill("");
@@ -427,6 +443,7 @@ function garantirCabecalho_(sh, recebidos) {
     (r.animais || []).forEach((a) => { const t = PREFIXO_ANIMAIS + a.categoria; if (cab.indexOf(t) < 0 && faltam.indexOf(t) < 0) faltam.push(t); });
     (r.minerais || []).forEach((m) => { const t = PREFIXO_SACOS + m.mineral; if (cab.indexOf(t) < 0 && faltam.indexOf(t) < 0) faltam.push(t); });
   });
+  if (cab.indexOf(COL_TEM_MINERAL) < 0) faltam.push(COL_TEM_MINERAL);
   if (faltam.length) {
     const falta = cab.length + faltam.length - sh.getMaxColumns();
     if (falta > 0) sh.insertColumnsAfter(sh.getMaxColumns(), falta);
@@ -453,6 +470,8 @@ function lerRegistros_(sh, cab) {
     if (!r.id) return;
     r.excluido = r.excluido === true || String(r.excluido).toUpperCase() === "TRUE";
     r.lotacao = lotacao[norm_(r.lotacao)] || "";
+    const iTem = cab.indexOf(COL_TEM_MINERAL);
+    r.tem_mineral = iTem >= 0 && norm_(l[iTem]) === "sim";
     for (let i = CABECALHO.length; i < cab.length; i++) {
       const q = Number(l[i]);
       if (!q) continue;
@@ -501,6 +520,7 @@ function paraLinha_(r, cab, kgSaco) {
       const m = minerais.find((x) => x.mineral === c.slice(PREFIXO_SACOS.length));
       return m ? Number(m.sacos) : "";
     }
+    if (c === COL_TEM_MINERAL) return r.tem_mineral ? "SIM" : "";
     return "";
   });
   return linha;
@@ -509,6 +529,104 @@ function paraLinha_(r, cab, kgSaco) {
 // ---------------------------------------------------------------------
 // Aba Faltas (mineral em falta no depósito)
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// Medicamentos: cadastro (aba Medicamentos) e aplicações (aba Medicações)
+// ---------------------------------------------------------------------
+function abaMedicamentos_() {
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(ABA_MEDICAMENTOS);
+  if (!sh) {
+    sh = ss.insertSheet(ABA_MEDICAMENTOS);
+    sh.getRange(1, 1, 1, CABECALHO_MEDICAMENTOS.length).setValues([CABECALHO_MEDICAMENTOS]).setFontWeight("bold");
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function abaMedicacoes_() {
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(ABA_MEDICACOES);
+  if (!sh) {
+    sh = ss.insertSheet(ABA_MEDICACOES);
+    sh.getRange(1, 1, 1, CABECALHO_MEDICACOES.length).setValues([CABECALHO_MEDICACOES]).setFontWeight("bold").setBackground("#2f5b8a").setFontColor("#ffffff");
+    sh.setFrozenRows(1);
+    const n = sh.getMaxRows() - 1;
+    sh.getRange(2, 1, n, 1).setNumberFormat("dd/mm/yyyy");
+    sh.getRange(2, 7, n, 1).setNumberFormat("@");
+    sh.getRange(2, 10, n, 1).setNumberFormat("@");
+    sh.hideColumns(10, 1);
+  }
+  return sh;
+}
+
+function lerMedicamentos_() {
+  const sh = SpreadsheetApp.getActive().getSheetByName(ABA_MEDICAMENTOS);
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues()
+    .filter((l) => String(l[0]).trim() !== "")
+    .map((l) => ({ nome: String(l[0]).trim(), alternativos: String(l[1] || "").trim(), unidade: String(l[2] || "").trim() || "mL", ativo: !ehNao_(l[3]) }));
+}
+
+// Linhas da aba Medicações para uma recorrida
+function linhasMedicacao_(r, unidade) {
+  const med = r.medicacao;
+  if (r.excluido || !med) return [];
+  const p = String(r.data || "").split("-");
+  const data = p.length === 3 ? new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])) : "";
+  const linha = (qtd, m, brincos, motivo) =>
+    [data, r.potreiro, qtd, Number(m.dose), unidade(m.medicamento), m.medicamento, brincos, motivo, r.registrado_por || "", r.id];
+  if (med.modo !== "animais") return (med.itens || []).map((m) => linha(med.qtd || "", m, "", ""));
+  // Animais: junta os brincos que receberam o mesmo medicamento, dose e motivo
+  const grupos = {};
+  const ordem = [];
+  (med.animais || []).forEach((a) => (a.itens || []).forEach((m) => {
+    const k = [m.medicamento, m.dose, a.motivo || ""].join("|");
+    if (!grupos[k]) { grupos[k] = { m: m, motivo: a.motivo || "", brincos: [] }; ordem.push(k); }
+    if (grupos[k].brincos.indexOf(a.brinco) < 0) grupos[k].brincos.push(a.brinco);
+  }));
+  return ordem.map((k) => { const g = grupos[k]; return linha(g.brincos.length, g.m, g.brincos.join(", "), g.motivo); });
+}
+
+// Refaz as linhas das recorridas gravadas agora (em ordem de data) e devolve
+// { idRecorrida: medicacao } montado a partir de toda a aba
+function sincronizarMedicacoes_(tocados) {
+  const sh = abaMedicacoes_();
+  const nCol = CABECALHO_MEDICACOES.length;
+  let linhas = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, nCol).getValues().filter((l) => String(l[9]).trim()) : [];
+  const comMed = tocados.filter((r) => r.medicacao || linhas.some((l) => String(l[9]) === r.id));
+  if (comMed.length) {
+    const unid = {};
+    lerMedicamentos_().forEach((m) => { unid[norm_(m.nome)] = m.unidade; });
+    const unidade = (nome) => unid[norm_(nome)] || "mL";
+    const ids = {};
+    comMed.forEach((r) => { ids[r.id] = true; });
+    linhas = linhas.filter((l) => !ids[String(l[9])]);
+    comMed.forEach((r) => { linhas = linhas.concat(linhasMedicacao_(r, unidade)); });
+    const t = (v) => (v instanceof Date ? v.getTime() : 0);
+    linhas = linhas.map((l, i) => [l, i]).sort((a, b) => t(a[0][0]) - t(b[0][0]) || a[1] - b[1]).map((x) => x[0]);
+    if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, nCol).clearContent();
+    if (linhas.length) sh.getRange(2, 1, linhas.length, nCol).setValues(linhas);
+  }
+  const mapa = {};
+  linhas.forEach((l) => {
+    const id = String(l[9]);
+    const item = { dose: Number(l[3]) || 0, medicamento: String(l[5]) };
+    const brincos = String(l[6] || "").split(",").map((b) => b.trim()).filter(String);
+    if (brincos.length) {
+      const med = mapa[id] && mapa[id].modo === "animais" ? mapa[id] : (mapa[id] = { modo: "animais", animais: [] });
+      brincos.forEach((b) => {
+        let a = med.animais.find((x) => x.brinco === b);
+        if (!a) med.animais.push(a = { brinco: b, motivo: String(l[7] || ""), itens: [] });
+        a.itens.push(item);
+      });
+    } else {
+      const med = mapa[id] || (mapa[id] = { modo: "lote", qtd: Number(l[2]) || "", itens: [] });
+      if (med.itens) med.itens.push(item);
+    }
+  });
+  return mapa;
+}
+
 function abaFaltas_() {
   const ss = SpreadsheetApp.getActive();
   let sh = ss.getSheetByName(ABA_FALTAS);

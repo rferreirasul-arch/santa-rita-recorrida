@@ -127,11 +127,18 @@
 
         <!-- Mineral -->
         <div class="bloco" id="bloco-mineral">
-          <button type="button" class="chave" id="chave-mineral" aria-pressed="false">
-            <span class="num">3</span>
-            <span class="chave-txt">Coloquei mineral no cocho <small>sacos por produto</small></span>
-            <span class="interruptor" aria-hidden="true"></span>
-          </button>
+          <div class="chave-linha chave-com-tem">
+            <button type="button" class="chave" id="chave-mineral" aria-pressed="false">
+              <span class="num">3</span>
+              <span class="chave-txt">Coloquei mineral no cocho <small>sacos por produto</small></span>
+              <span class="espaco-tem" aria-hidden="true"></span>
+              <span class="interruptor" aria-hidden="true"></span>
+            </button>
+            <!-- "Tem mineral": o cocho já tinha mineral (só registra; não entra no consumo) -->
+            <button type="button" class="btn-tem" id="btn-tem" aria-pressed="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Tem mineral
+            </button>
+          </div>
           <div class="bloco-corpo" id="corpo-mineral" hidden>
             <p id="dica-mineral" class="dica"></p>
             <div id="linhas-mineral" class="linhas"></div>
@@ -146,7 +153,7 @@
         <div class="bloco" id="bloco-falta">
           <button type="button" class="chave" id="chave-falta" aria-pressed="false">
             <span class="num">4</span>
-            <span class="chave-txt">Falta mineral no depósito <small>o que acabou e precisa trazer</small></span>
+            <span class="chave-txt">Falta mineral no depósito <small>sem no depósito e precisa trazer</small></span>
             <span class="interruptor" aria-hidden="true"></span>
           </button>
           <div class="bloco-corpo" id="corpo-falta" hidden>
@@ -155,6 +162,37 @@
             <div class="falta-outro">
               <span class="muted-s">Outro mineral:</span>
               <div id="falta-combo"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Medicamentos -->
+        <div class="bloco" id="bloco-med">
+          <button type="button" class="chave" id="chave-med" aria-pressed="false">
+            <span class="num">5</span>
+            <span class="chave-txt">Medicamentos <small>aplicados no lote ou em animais</small></span>
+            <span class="interruptor" aria-hidden="true"></span>
+          </button>
+          <div class="bloco-corpo" id="corpo-med" hidden>
+            <div class="seg" role="group" aria-label="Aplicado em">
+              <button type="button" data-med-modo="lote" aria-pressed="true">Todo o lote</button>
+              <button type="button" data-med-modo="animais" aria-pressed="false">Animal(is) específico(s)</button>
+            </div>
+            <div id="med-lote">
+              <p id="dica-med" class="dica"></p>
+              <div class="med-cab"><span>Dose</span><span>Medicamento</span></div>
+              <div id="linhas-med-lote" class="linhas linhas-med"></div>
+              <div class="linha-acoes">
+                <button type="button" class="btn-mais" id="add-med-lote" aria-label="Adicionar medicamento">+</button>
+                <span class="muted-s">Adicionar medicamento</span>
+              </div>
+            </div>
+            <div id="med-animais" hidden>
+              <div id="lista-med-animais" class="med-animais"></div>
+              <div class="linha-acoes">
+                <button type="button" class="btn-mais" id="add-med-animal" aria-label="Adicionar animal">+</button>
+                <span class="muted-s">Adicionar animal</span>
+              </div>
             </div>
           </div>
         </div>

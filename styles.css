@@ -224,6 +224,38 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
   border: 1px solid var(--line); background: #fff; color: var(--ink); font-weight: 700; font-size: .9rem;
 }
 .btn-vazio.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+/* "Tem mineral" fica entre o texto e a chave do bloco 3 */
+.chave-com-tem { position: relative; }
+.chave-com-tem .espaco-tem { flex: none; width: 128px; }
+.btn-tem {
+  position: absolute; right: 60px; top: 50%; transform: translateY(-50%);
+  display: inline-flex; align-items: center; gap: 5px; min-height: 40px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--line); background: #fff; color: var(--ink); font-weight: 700; font-size: .9rem; white-space: nowrap;
+}
+.btn-tem svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; opacity: .35; }
+.btn-tem.on { background: var(--ok); color: #fff; border-color: var(--ok); }
+.btn-tem.on svg { opacity: 1; }
+
+/* Medicamentos (bloco 5) */
+.seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--field); border-radius: 10px; padding: 3px; gap: 3px; margin-bottom: 12px; }
+.seg button { border: 0; background: none; border-radius: 8px; min-height: 40px; font-weight: 700; font-size: .9rem; color: var(--muted); padding: 0 6px; }
+.seg button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.med-cab { display: grid; grid-template-columns: 96px 1fr 36px; gap: 8px; font-size: .78rem; color: var(--muted); font-weight: 700; margin-bottom: 4px; }
+.linha-med { grid-template-columns: 96px 1fr 36px; }
+.linha-med .btn-x { width: 36px; }
+.med-animais { display: flex; flex-direction: column; gap: 12px; }
+.med-animal { border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; background: #fff; }
+.med-animal-cab { display: grid; grid-template-columns: 1fr 36px; gap: 8px; align-items: end; }
+.mini { display: flex; flex-direction: column; gap: 3px; }
+.mini span { font-size: .78rem; color: var(--muted); font-weight: 700; }
+.med-animal .brinco { font-weight: 700; }
+.med-animal .linha-acoes { margin-top: 2px; }
+.btn-mais.btn-mais-s { width: 36px; height: 36px; font-size: 1.3rem; }
+@media (max-width: 420px) {
+  .chave-com-tem .espaco-tem { width: 100px; }
+  .btn-tem { right: 58px; padding: 0 9px; gap: 3px; font-size: .8rem; min-height: 36px; }
+  .btn-tem svg { width: 14px; height: 14px; }
+}
 .aviso-vazio { background: var(--field); border-radius: 10px; padding: 12px; font-size: .95rem; }
 
 /* Falta no depósito */
@@ -326,6 +358,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .badge.min { background: var(--primary-bg); color: var(--primary); }
 .badge.vazio { background: var(--field); color: var(--muted); }
 .badge.falta { background: var(--perda-bg); color: var(--perda); }
+.badge.med { background: #e6eef8; color: #2f5b8a; }
 .txt-falta { color: var(--perda); }
 .vazio { text-align: center; color: var(--muted); padding: 24px 8px; }
 @media (max-width: 560px) {
