@@ -1051,7 +1051,7 @@ function cartaoAnimalMed(a = {}) {
   const d = document.createElement("div");
   d.className = "med-animal";
   d.innerHTML = `<div class="med-animal-cab">
-      <label class="mini"><span>Brinco</span><input type="text" class="brinco" placeholder="Nº do brinco" autocomplete="off" autocapitalize="characters"></label>
+      <label class="mini"><span>Brinco</span><input type="text" class="brinco" placeholder="Nº do brinco (opcional)" autocomplete="off" autocapitalize="characters"></label>
       <button type="button" class="btn-x" data-remover-animal aria-label="Remover animal">×</button>
     </div>
     <label class="mini"><span>Motivo</span><input type="text" class="motivo" placeholder="Ex.: bicheira, pneumonia" autocomplete="off"></label>
@@ -1140,17 +1140,16 @@ function lerMed(qtdConferida) {
     const r = lerItensMed(c);
     if (!brinco && !motivo && !r.itens.length && !r.erro) continue; // cartão em branco
     if (r.erro) return { erro: r.erro, msg: msgItens };
-    if (!brinco) { bInp.classList.add("erro"); return { erro: bInp, msg: "Informe o brinco do animal." }; }
-    if (!r.itens.length) return { erro: c.querySelector(".dose"), msg: `Informe a dose e o medicamento do brinco ${brinco}.` };
+    if (!r.itens.length) return { erro: c.querySelector(".dose"), msg: `Informe a dose e o medicamento${brinco ? ` do brinco ${brinco}` : " do animal"}.` };
     animais.push({ brinco, motivo, itens: r.itens });
   }
-  if (!animais.length) return { erro: $("#lista-med-animais .brinco"), msg: "Informe o brinco, a dose e o medicamento (ou desligue “Medicamentos”)." };
+  if (!animais.length) return { erro: $("#lista-med-animais .dose"), msg: "Informe a dose e o medicamento (ou desligue “Medicamentos”)." };
   return { med: { modo: "animais", animais } };
 }
 
 const txtItensMed = (itens) => (itens || []).map((m) => `${fmtDose(m.dose)} ${unidadeDe(m.medicamento)} ${m.medicamento}`).join(" + ");
 function txtMed(med) {
-  if (med.modo === "animais") return (med.animais || []).map((a) => `Brinco ${a.brinco}: ${txtItensMed(a.itens)}${a.motivo ? ` (${a.motivo})` : ""}`).join(" · ");
+  if (med.modo === "animais") return (med.animais || []).map((a) => `${a.brinco ? `Brinco ${a.brinco}` : "Animal sem brinco"}: ${txtItensMed(a.itens)}${a.motivo ? ` (${a.motivo})` : ""}`).join(" · ");
   return `Lote${med.qtd ? ` (${fmtNum(med.qtd)} animais)` : ""}: ${txtItensMed(med.itens)}`;
 }
 

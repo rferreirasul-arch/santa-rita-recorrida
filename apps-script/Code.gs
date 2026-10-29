@@ -42,6 +42,8 @@ const PREFIXO_ANIMAIS = "Animais: ";
 const PREFIXO_SACOS = "Sacos: ";
 // Coluna extra (criada no fim, se faltar): "SIM" quando o cocho já tinha mineral
 const COL_TEM_MINERAL = "Tem mineral";
+// Coluna oculta com os dados da medicação da recorrida (a aba Medicações é montada a partir dela)
+const COL_MEDICACAO = "Medicação (dados, não editar)";
 const LOTACAO_TXT = { conferida: "Conferida", vazio: "Vazio", "": "Não conferida" };
 
 const CABECALHO_POTREIROS = [
@@ -306,8 +308,7 @@ function sincronizar_(recebidos, alteracoes, usuario, faltasRecebidas) {
     });
 
     if (novos.length) sh.getRange(sh.getLastRow() + 1, 1, novos.length, cab.length).setValues(novos);
-    const medicacoes = sincronizarMedicacoes_(tocados);
-    base.lista.forEach((r) => { r.medicacao = medicacoes[r.id] || null; });
+    sincronizarMedicacoes_(tocados);
     return {
       ok: true,
       usuario: usuario,
@@ -444,11 +445,17 @@ function garantirCabecalho_(sh, recebidos) {
     (r.minerais || []).forEach((m) => { const t = PREFIXO_SACOS + m.mineral; if (cab.indexOf(t) < 0 && faltam.indexOf(t) < 0) faltam.push(t); });
   });
   if (cab.indexOf(COL_TEM_MINERAL) < 0) faltam.push(COL_TEM_MINERAL);
+  if (cab.indexOf(COL_MEDICACAO) < 0) faltam.push(COL_MEDICACAO);
   if (faltam.length) {
     const falta = cab.length + faltam.length - sh.getMaxColumns();
     if (falta > 0) sh.insertColumnsAfter(sh.getMaxColumns(), falta);
     sh.getRange(1, cab.length + 1, 1, faltam.length).setValues([faltam]).setFontWeight("bold");
     cab = cab.concat(faltam);
+    const iMed = cab.indexOf(COL_MEDICACAO);
+    if (faltam.indexOf(COL_MEDICACAO) >= 0) {
+      sh.getRange(2, iMed + 1, Math.max(sh.getMaxRows() - 1, 1), 1).setNumberFormat("@");
+      sh.hideColumns(iMed + 1);
+    }
   }
   return cab;
 }
@@ -472,6 +479,9 @@ function lerRegistros_(sh, cab) {
     r.lotacao = lotacao[norm_(r.lotacao)] || "";
     const iTem = cab.indexOf(COL_TEM_MINERAL);
     r.tem_mineral = iTem >= 0 && norm_(l[iTem]) === "sim";
+    const iMed = cab.indexOf(COL_MEDICACAO);
+    r.medicacao = null;
+    if (iMed >= 0 && String(l[iMed]).trim()) { try { r.medicacao = JSON.parse(l[iMed]); } catch (e) { r.medicacao = null; } }
     for (let i = CABECALHO.length; i < cab.length; i++) {
       const q = Number(l[i]);
       if (!q) continue;
@@ -521,6 +531,7 @@ function paraLinha_(r, cab, kgSaco) {
       return m ? Number(m.sacos) : "";
     }
     if (c === COL_TEM_MINERAL) return r.tem_mineral ? "SIM" : "";
+    if (c === COL_MEDICACAO) return r.medicacao ? JSON.stringify(r.medicacao) : "";
     return "";
   });
   return linha;
@@ -576,19 +587,25 @@ function linhasMedicacao_(r, unidade) {
   const linha = (qtd, m, brincos, motivo) =>
     [data, r.potreiro, qtd, Number(m.dose), unidade(m.medicamento), m.medicamento, brincos, motivo, r.registrado_por || "", r.id];
   if (med.modo !== "animais") return (med.itens || []).map((m) => linha(med.qtd || "", m, "", ""));
-  // Animais: junta os brincos que receberam o mesmo medicamento, dose e motivo
+  // Animais: junta os que receberam o mesmo medicamento, dose e motivo (brinco é opcional)
   const grupos = {};
   const ordem = [];
   (med.animais || []).forEach((a) => (a.itens || []).forEach((m) => {
     const k = [m.medicamento, m.dose, a.motivo || ""].join("|");
-    if (!grupos[k]) { grupos[k] = { m: m, motivo: a.motivo || "", brincos: [] }; ordem.push(k); }
-    if (grupos[k].brincos.indexOf(a.brinco) < 0) grupos[k].brincos.push(a.brinco);
+    if (!grupos[k]) { grupos[k] = { m: m, motivo: a.motivo || "", brincos: [], semBrinco: 0 }; ordem.push(k); }
+    const b = String(a.brinco || "").trim();
+    if (!b) grupos[k].semBrinco++;
+    else if (grupos[k].brincos.indexOf(b) < 0) grupos[k].brincos.push(b);
   }));
-  return ordem.map((k) => { const g = grupos[k]; return linha(g.brincos.length, g.m, g.brincos.join(", "), g.motivo); });
+  return ordem.map((k) => {
+    const g = grupos[k];
+    const sem = g.semBrinco ? (g.semBrinco === 1 ? "1 sem brinco" : g.semBrinco + " sem brinco") : "";
+    const txt = g.brincos.join(", ") + (g.brincos.length && sem ? " + " : "") + sem;
+    return linha(g.brincos.length + g.semBrinco, g.m, txt, g.motivo);
+  });
 }
 
-// Refaz as linhas das recorridas gravadas agora (em ordem de data) e devolve
-// { idRecorrida: medicacao } montado a partir de toda a aba
+// Refaz as linhas das recorridas gravadas agora, em ordem de data
 function sincronizarMedicacoes_(tocados) {
   const sh = abaMedicacoes_();
   const nCol = CABECALHO_MEDICACOES.length;
@@ -607,24 +624,6 @@ function sincronizarMedicacoes_(tocados) {
     if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, nCol).clearContent();
     if (linhas.length) sh.getRange(2, 1, linhas.length, nCol).setValues(linhas);
   }
-  const mapa = {};
-  linhas.forEach((l) => {
-    const id = String(l[9]);
-    const item = { dose: Number(l[3]) || 0, medicamento: String(l[5]) };
-    const brincos = String(l[6] || "").split(",").map((b) => b.trim()).filter(String);
-    if (brincos.length) {
-      const med = mapa[id] && mapa[id].modo === "animais" ? mapa[id] : (mapa[id] = { modo: "animais", animais: [] });
-      brincos.forEach((b) => {
-        let a = med.animais.find((x) => x.brinco === b);
-        if (!a) med.animais.push(a = { brinco: b, motivo: String(l[7] || ""), itens: [] });
-        a.itens.push(item);
-      });
-    } else {
-      const med = mapa[id] || (mapa[id] = { modo: "lote", qtd: Number(l[2]) || "", itens: [] });
-      if (med.itens) med.itens.push(item);
-    }
-  });
-  return mapa;
 }
 
 function abaFaltas_() {
