@@ -20,7 +20,8 @@ const ABA_MEDICACOES = "Medicações";       // eventos: uma linha por medicamen
 const CABECALHO_MEDICAMENTOS = ["Medicamento", "Nomes alternativos", "Unidade da dose", "Ativo (SIM/NÃO)"];
 // Lote inteiro: uma linha por medicamento. Animais: uma linha por medicamento + dose + motivo,
 // com os brincos juntos. As linhas de uma recorrida são refeitas a cada alteração dela.
-const CABECALHO_MEDICACOES = ["Data", "Potreiro", "Quantidade de animais", "Dose", "Unidade", "Medicamento", "Brincos", "Motivo", "Registrado por", "ID da recorrida"];
+const CABECALHO_MEDICACOES = ["Data", "Potreiro", "Aplicado em", "Quantidade de animais", "Dose", "Unidade", "Medicamento", "Brincos", "Motivo", "Registrado por", "ID da recorrida"];
+const APLICADO_EM = { lote: "Todo o lote", animais: "Animal específico" };
 
 // Aba Faltas: uma linha por mineral em falta no depósito de um potreiro
 const COLUNAS_FALTAS = ["id", "data", "potreiro", "mineral", "registrado_por", "criado_em", "reposto_em", "reposto_por", "atualizado_em", "excluido", "recorrida_id"];
@@ -559,13 +560,19 @@ function abaMedicacoes_() {
   let sh = ss.getSheetByName(ABA_MEDICACOES);
   if (!sh) {
     sh = ss.insertSheet(ABA_MEDICACOES);
-    sh.getRange(1, 1, 1, CABECALHO_MEDICACOES.length).setValues([CABECALHO_MEDICACOES]).setFontWeight("bold").setBackground("#2f5b8a").setFontColor("#ffffff");
     sh.setFrozenRows(1);
-    const n = sh.getMaxRows() - 1;
+  }
+  // Cabeçalho novo (ou de uma versão anterior): regrava e oculta só a coluna do ID
+  const nCol = CABECALHO_MEDICACOES.length;
+  const atual = sh.getRange(1, 1, 1, nCol).getValues()[0].map(String);
+  if (atual.join("|") !== CABECALHO_MEDICACOES.join("|")) {
+    sh.getRange(1, 1, 1, nCol).setValues([CABECALHO_MEDICACOES]).setFontWeight("bold").setBackground("#2f5b8a").setFontColor("#ffffff");
+    const n = Math.max(sh.getMaxRows() - 1, 1);
     sh.getRange(2, 1, n, 1).setNumberFormat("dd/mm/yyyy");
-    sh.getRange(2, 7, n, 1).setNumberFormat("@");
-    sh.getRange(2, 10, n, 1).setNumberFormat("@");
-    sh.hideColumns(10, 1);
+    sh.getRange(2, 8, n, 1).setNumberFormat("@");
+    sh.getRange(2, nCol, n, 1).setNumberFormat("@");
+    sh.showColumns(1, nCol);
+    sh.hideColumns(nCol, 1);
   }
   return sh;
 }
@@ -585,7 +592,7 @@ function linhasMedicacao_(r, unidade) {
   const p = String(r.data || "").split("-");
   const data = p.length === 3 ? new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])) : "";
   const linha = (qtd, m, brincos, motivo) =>
-    [data, r.potreiro, qtd, Number(m.dose), unidade(m.medicamento), m.medicamento, brincos, motivo, r.registrado_por || "", r.id];
+    [data, r.potreiro, APLICADO_EM[med.modo === "animais" ? "animais" : "lote"], qtd, Number(m.dose), unidade(m.medicamento), m.medicamento, brincos, motivo, r.registrado_por || "", r.id];
   if (med.modo !== "animais") return (med.itens || []).map((m) => linha(med.qtd || "", m, "", ""));
   // Animais: junta os que receberam o mesmo medicamento, dose e motivo (brinco é opcional)
   const grupos = {};
@@ -609,15 +616,15 @@ function linhasMedicacao_(r, unidade) {
 function sincronizarMedicacoes_(tocados) {
   const sh = abaMedicacoes_();
   const nCol = CABECALHO_MEDICACOES.length;
-  let linhas = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, nCol).getValues().filter((l) => String(l[9]).trim()) : [];
-  const comMed = tocados.filter((r) => r.medicacao || linhas.some((l) => String(l[9]) === r.id));
+  let linhas = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, nCol).getValues().filter((l) => String(l[nCol - 1]).trim()) : [];
+  const comMed = tocados.filter((r) => r.medicacao || linhas.some((l) => String(l[nCol - 1]) === r.id));
   if (comMed.length) {
     const unid = {};
     lerMedicamentos_().forEach((m) => { unid[norm_(m.nome)] = m.unidade; });
     const unidade = (nome) => unid[norm_(nome)] || "mL";
     const ids = {};
     comMed.forEach((r) => { ids[r.id] = true; });
-    linhas = linhas.filter((l) => !ids[String(l[9])]);
+    linhas = linhas.filter((l) => !ids[String(l[nCol - 1])]);
     comMed.forEach((r) => { linhas = linhas.concat(linhasMedicacao_(r, unidade)); });
     const t = (v) => (v instanceof Date ? v.getTime() : 0);
     linhas = linhas.map((l, i) => [l, i]).sort((a, b) => t(a[0][0]) - t(b[0][0]) || a[1] - b[1]).map((x) => x[0]);
