@@ -19,7 +19,7 @@ const ABA_MEDICACOES = "Medicações";       // eventos: uma linha por medicamen
 
 const CABECALHO_MEDICAMENTOS = ["Medicamento", "Nomes alternativos", "Unidade da dose", "Ativo (SIM/NÃO)", "Tipo"];
 // Sugestões da coluna Tipo (dá para digitar outro); o Painel usa Carrapaticida e Vermífugo
-const TIPOS_MEDICAMENTO = ["Vermífugo", "Carrapaticida", "Endectocida", "Antibiótico", "Anti-inflamatório", "Vacina", "Suplemento injetável", "Outro"];
+const TIPOS_MEDICAMENTO = ["Vermífugo", "Carrapaticida", "Endectocida", "Antibiótico", "Anti-inflamatório", "Vacina clostridiose", "Vacina reprodutiva", "Vacina", "Suplemento injetável", "Outro"];
 // Lote inteiro: uma linha por medicamento. Animais: uma linha por medicamento + dose + motivo,
 // com os brincos juntos. As linhas de uma recorrida são refeitas a cada alteração dela.
 const CABECALHO_MEDICACOES = ["Data", "Potreiro", "Aplicado em", "Categorias", "Quantidade de animais", "Dose por animal", "Total aplicado", "Unidade", "Medicamento", "Brincos", "Motivo", "Registrado por", "ID da recorrida"];
