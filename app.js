@@ -1032,9 +1032,15 @@ function renderFaltasPainel() {
 // =====================================================================
 // Medicamentos (bloco 5): todo o lote ou animais específicos
 // =====================================================================
-// medicacao = { modo: "lote", qtd, itens: [{ dose, medicamento }] }
+// medicacao = { modo: "lote", qtd, itens: [{ dose, medicamento, categorias?, qtd? }] }
 //          ou { modo: "animais", animais: [{ brinco, motivo, itens: [{ dose, medicamento }] }] }
+// No lote, "categorias" só aparece quando o medicamento foi para parte das categorias (qtd = soma delas).
 let medModo = "lote";
+// Jeito de informar medicamentos por categoria no lote:
+// "A" (em uso) = escolhe as categorias e depois os medicamentos do grupo;
+// "B" (testada, guardada) = cada linha de medicamento marca as suas categorias. Para voltar a ela, troque para "B".
+// Os dados gravados são os mesmos nas duas, então dá para trocar sem perder registros.
+const medOpcao = "A";
 let tecladoBrinco = "numeric"; // "numeric" (padrão) ou "text"; vale para os próximos animais
 const fmtDose = (n) => String(n ?? "").replace(".", ",");
 
@@ -1068,6 +1074,89 @@ function cartaoAnimalMed(a = {}) {
   return d;
 }
 
+// Categorias do lote: as conferidas agora no bloco 2 ou, sem elas, as da última lotação
+function catsDoLote() {
+  if (blocoLigado("animais") && !vazio) {
+    const m = new Map();
+    $$("#linhas-animais .linha-animal").forEach((l) => {
+      const q = numero(l.querySelector(".qtd").value);
+      const it = acharItem(catalogo.categorias, l.querySelector(".combo-in").value);
+      if (it && q > 0) m.set(it.nome, (m.get(it.nome) || 0) + q);
+    });
+    if (m.size) return [...m].map(([categoria, qtd]) => ({ categoria, qtd }));
+  }
+  const lot = potSel ? estadoPotreiros().get(norm(potSel))?.lotacao : null;
+  return lot?.lotacao === "conferida" ? (lot.animais || []).map((a) => ({ categoria: a.categoria, qtd: Number(a.qtd) })) : [];
+}
+
+// Botões de categoria (sel = null marca todas)
+function chipsCat(sel = null) {
+  const d = document.createElement("div");
+  d.className = "cats-med";
+  desenharChips(d, sel);
+  return d;
+}
+function desenharChips(box, sel) {
+  const cats = catsDoLote();
+  (sel || []).forEach((c) => { if (!cats.some((x) => mesmoNome(x.categoria, c))) cats.push({ categoria: c }); });
+  if (!cats.length) { box.innerHTML = `<span class="muted-s">Sem categorias registradas: vale para todo o lote.</span>`; return; }
+  const marcado = (c) => !sel || sel.some((x) => mesmoNome(x, c));
+  const todas = cats.every((c) => marcado(c.categoria));
+  box.innerHTML = (cats.length > 1 ? `<button type="button" class="todas" data-cat-todas aria-pressed="${todas}">Todas</button>` : "")
+    + cats.map((c) => `<button type="button" data-cat-med="${esc(c.categoria)}" aria-pressed="${marcado(c.categoria)}">${esc(c.categoria)}${c.qtd ? ` <b>${fmtNum(c.qtd)}</b>` : ""}</button>`).join("");
+}
+const catsMarcadas = (box) => $$("[data-cat-med]", box).filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.catMed);
+const todasMarcadas = (box) => $$("[data-cat-med]", box).every((b) => b.getAttribute("aria-pressed") === "true");
+function clicarChip(b) {
+  const box = b.closest(".cats-med");
+  if (b.dataset.catTodas !== undefined) {
+    const ligar = !todasMarcadas(box);
+    $$("[data-cat-med]", box).forEach((x) => x.setAttribute("aria-pressed", String(ligar)));
+  } else b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true"));
+  $("[data-cat-todas]", box)?.setAttribute("aria-pressed", String(todasMarcadas(box)));
+  box.classList.remove("erro");
+}
+// Quando os animais do bloco 2 mudam, refaz os botões mantendo o que estava marcado
+function atualizarCatsMed() {
+  $$("#linhas-med-lote .cats-med").forEach((box) => desenharChips(box, todasMarcadas(box) ? null : catsMarcadas(box)));
+}
+
+// Opção A: grupo de categorias com seus medicamentos
+function grupoMed(g = {}) {
+  const d = document.createElement("div");
+  d.className = "med-grupo";
+  d.innerHTML = `<div class="med-grupo-cab"><span>Categorias</span>
+      <button type="button" class="btn-x" data-remover-grupo aria-label="Remover grupo">×</button></div>
+    <div class="med-cab"><span>Dose</span><span>Medicamento</span></div>
+    <div class="linhas linhas-med"></div>
+    <div class="linha-acoes"><button type="button" class="btn-mais btn-mais-s" data-add-med aria-label="Adicionar medicamento">+</button>
+      <span class="muted-s">Outro medicamento para estas categorias</span></div>`;
+  d.insertBefore(chipsCat(g.categorias ?? null), d.children[1]);
+  (g.itens?.length ? g.itens : [{}]).forEach((m) => d.querySelector(".linhas-med").appendChild(linhaMed(m)));
+  return d;
+}
+// Novo grupo já vem com as categorias que ainda não estão em nenhum grupo
+function novoGrupoMed() {
+  const usadas = $$("#linhas-med-lote .cats-med").flatMap(catsMarcadas);
+  const resto = catsDoLote().map((c) => c.categoria).filter((c) => !usadas.some((u) => mesmoNome(u, c)));
+  return grupoMed({ categorias: $$("#linhas-med-lote .med-grupo").length ? resto : null });
+}
+
+// Opção B: linha de dose + medicamento com as categorias embaixo
+function itemMedCat(m = {}) {
+  const d = document.createElement("div");
+  d.className = "med-item";
+  d.appendChild(linhaMed(m));
+  d.appendChild(chipsCat(m.categorias?.length ? m.categorias : null));
+  return d;
+}
+const novoItemLote = () => (medOpcao === "A" ? novoGrupoMed() : itemMedCat());
+
+function mudarOpcaoMed(op) {
+  $("#med-cab-lote").hidden = op === "A";
+  $("#txt-add-med-lote").textContent = op === "A" ? "Outro grupo de categorias" : "Adicionar medicamento";
+}
+
 function mudarModoMed(modo) {
   medModo = modo;
   $$("[data-med-modo]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.medModo === modo)));
@@ -1078,7 +1167,9 @@ function mudarModoMed(modo) {
 
 // Garante uma linha em branco em cada modo e mostra quantos animais tem o lote
 function prepararMed() {
-  if (!$("#linhas-med-lote").children.length) $("#linhas-med-lote").appendChild(linhaMed());
+  mudarOpcaoMed(medOpcao);
+  if (!$("#linhas-med-lote").children.length) $("#linhas-med-lote").appendChild(novoItemLote());
+  atualizarCatsMed();
   if (!$("#lista-med-animais").children.length) $("#lista-med-animais").appendChild(cartaoAnimalMed());
   const lot = potSel ? estadoPotreiros().get(norm(potSel))?.lotacao : null;
   $("#dica-med").textContent = lot?.lotacao === "conferida"
@@ -1101,7 +1192,17 @@ function preencherMed(med) {
   $("#lista-med-animais").innerHTML = "";
   if (!med) { ligarBloco("med", false); return; }
   if (med.modo === "animais") (med.animais || []).forEach((a) => $("#lista-med-animais").appendChild(cartaoAnimalMed(a)));
-  else (med.itens || []).forEach((m) => $("#linhas-med-lote").appendChild(linhaMed(m)));
+  else if (medOpcao === "B") (med.itens || []).forEach((m) => $("#linhas-med-lote").appendChild(itemMedCat(m)));
+  else {
+    // Opção A: junta os medicamentos que foram para as mesmas categorias
+    const grupos = new Map();
+    (med.itens || []).forEach((m) => {
+      const k = (m.categorias || []).map(norm).sort().join("|");
+      if (!grupos.has(k)) grupos.set(k, { categorias: m.categorias?.length ? m.categorias : null, itens: [] });
+      grupos.get(k).itens.push(m);
+    });
+    grupos.forEach((g) => $("#linhas-med-lote").appendChild(grupoMed(g)));
+  }
   mudarModoMed(med.modo === "animais" ? "animais" : "lote");
   ligarBloco("med", true);
 }
@@ -1129,12 +1230,27 @@ function lerItensMed(box) {
 function lerMed(qtdConferida) {
   const msgItens = "Confira os medicamentos: dose (número) e medicamento da lista.";
   if (medModo === "lote") {
-    const r = lerItensMed($("#linhas-med-lote"));
-    if (r.erro) return { erro: r.erro, msg: msgItens };
-    if (!r.itens.length) return { erro: $("#linhas-med-lote .dose"), msg: "Informe a dose e o medicamento (ou desligue “Medicamentos”)." };
+    const cats = catsDoLote();
+    const itens = [];
+    // Cada bloco (grupo na opção A, linha na opção B) tem seus botões de categoria
+    for (const bloco of $$("#linhas-med-lote > .med-grupo, #linhas-med-lote > .med-item")) {
+      const r = lerItensMed(bloco);
+      if (r.erro) return { erro: r.erro, msg: msgItens };
+      if (!r.itens.length) continue;
+      const box = $(".cats-med", bloco);
+      let extra = {};
+      if (!todasMarcadas(box)) {
+        const categorias = catsMarcadas(box);
+        if (!categorias.length) { box.classList.add("erro"); box.scrollIntoView({ block: "center", behavior: "smooth" }); return { erro: box, msg: "Marque a(s) categoria(s) que receberam o medicamento." }; }
+        const soma = categorias.reduce((s, c) => s + (cats.find((x) => mesmoNome(x.categoria, c))?.qtd || 0), 0);
+        extra = { categorias, qtd: soma || "" };
+      }
+      r.itens.forEach((m) => itens.push({ ...m, ...extra }));
+    }
+    if (!itens.length) return { erro: $("#linhas-med-lote .dose"), msg: "Informe a dose e o medicamento (ou desligue “Medicamentos”)." };
     const lot = estadoPotreiros().get(norm(potSel))?.lotacao;
     const qtd = qtdConferida ?? (lot?.lotacao === "conferida" ? totalAnimais(lot) : "");
-    return { med: { modo: "lote", qtd, itens: r.itens } };
+    return { med: { modo: "lote", qtd, itens } };
   }
   const animais = [];
   for (const c of $$("#lista-med-animais .med-animal")) {
@@ -1154,7 +1270,9 @@ function lerMed(qtdConferida) {
 const txtItensMed = (itens) => (itens || []).map((m) => `${fmtDose(m.dose)} ${unidadeDe(m.medicamento)} ${m.medicamento}`).join(" + ");
 function txtMed(med) {
   if (med.modo === "animais") return (med.animais || []).map((a) => `${a.brinco ? `Brinco ${a.brinco}` : "Animal sem brinco"}: ${txtItensMed(a.itens)}${a.motivo ? ` (${a.motivo})` : ""}`).join(" · ");
-  return `Lote${med.qtd ? ` (${fmtNum(med.qtd)} animais)` : ""}: ${txtItensMed(med.itens)}`;
+  const parte = (med.itens || []).filter((m) => m.categorias?.length);
+  if (!parte.length) return `Lote${med.qtd ? ` (${fmtNum(med.qtd)} animais)` : ""}: ${txtItensMed(med.itens)}`;
+  return (med.itens || []).map((m) => `${txtItensMed([m])} → ${m.categorias?.length ? m.categorias.join(", ") : "todo o lote"}${m.categorias?.length && m.qtd ? ` (${fmtNum(m.qtd)})` : ""}`).join(" · ");
 }
 
 // =====================================================================
@@ -1397,6 +1515,9 @@ function baixarCsv() {
 // =====================================================================
 // Aba Lotação
 // =====================================================================
+// Filtro por categoria na Lotação (pode marcar mais de uma: mostra quem tem qualquer uma delas)
+const catFiltro = new Set();
+
 function renderLotacao() {
   const estado = estadoPotreiros();
   const hoje = hojeISO();
@@ -1426,16 +1547,19 @@ function renderLotacao() {
 
   const porCat = {};
   ocupados.forEach((l) => l.lot.animais.forEach((a) => { porCat[a.categoria] = (porCat[a.categoria] || 0) + Number(a.qtd); }));
+  [...catFiltro].forEach((c) => { if (!porCat[c]) catFiltro.delete(c); });
   $("#lot-cats").innerHTML = Object.entries(porCat).sort((a, b) => b[1] - a[1])
-    .map(([c, n]) => `<span>${esc(c)}: <b>${fmtNum(n)}</b></span>`).join("");
+    .map(([c, n]) => `<button type="button" data-cat="${esc(c)}" aria-pressed="${catFiltro.has(c)}">${esc(c)}: <b>${fmtNum(n)}</b></button>`).join("")
+    + (catFiltro.size ? `<button type="button" class="limpar" data-cat-limpar>Limpar filtro</button>` : "");
 
   const q = $("#lot-q").value;
   const f = $("#lot-f").value;
-  const vis = linhas.filter((l) => (!f || l.grupo === f) && combina(l.p, q)).sort((a, b) => porNome(a.p, b.p));
+  const temCat = (l) => !catFiltro.size || (l.grupo === "ocupados" && l.lot.animais.some((a) => catFiltro.has(a.categoria)));
+  const vis = linhas.filter((l) => (!f || l.grupo === f) && combina(l.p, q) && temCat(l)).sort((a, b) => porNome(a.p, b.p));
   // Tabela compacta: Potreiro | Animais | Última atualização (tocar na linha abre o registro)
   const linha = (l) => {
     const animais = l.grupo === "ocupados"
-      ? `${totaisLinha(l.lot)}${l.lot.animais.length ? `<small>${esc(txtAnimais(l.lot))}</small>` : ""}`
+      ? totaisLinha(l.lot) + l.lot.animais.map((a) => `<small class="${catFiltro.has(a.categoria) ? "cat-sel" : ""}">${fmtQ(a.qtd)} ${esc(a.categoria)}</small>`).join("")
       : l.grupo === "vazios" ? `<span class="t-vazio">Vazio</span>` : `<span class="t-sem">Sem informação</span>`;
     const velho = l.lot && diasEntre(l.lot.data, hoje) > DIAS_LOTACAO_VELHA;
     const data = l.lot ? `${fmtData(l.lot.data).slice(0, 6)}${l.lot.data.slice(2, 4)}<small class="${velho ? "velho" : ""}">${haDias(l.lot.data)}</small>` : "–";
@@ -1671,7 +1795,18 @@ function ligarEventos() {
   $("#btn-tem").addEventListener("click", () => marcarTemMineral(!temMineral));
   $("#chave-med").addEventListener("click", () => ligarBloco("med", !blocoLigado("med")));
   $$("[data-med-modo]").forEach((b) => b.addEventListener("click", () => mudarModoMed(b.dataset.medModo)));
-  $("#add-med-lote").addEventListener("click", () => { const l = linhaMed(); $("#linhas-med-lote").appendChild(l); l.querySelector(".dose").focus(); });
+  $("#add-med-lote").addEventListener("click", () => { const l = novoItemLote(); $("#linhas-med-lote").appendChild(l); if (medOpcao === "B") l.querySelector(".dose").focus(); });
+  $("#linhas-med-lote").addEventListener("click", (e) => {
+    const chip = e.target.closest("[data-cat-med], [data-cat-todas]");
+    if (chip) { clicarChip(chip); return; }
+    const rg = e.target.closest("[data-remover-grupo]");
+    if (rg) { rg.closest(".med-grupo").remove(); return; }
+    const add = e.target.closest("[data-add-med]");
+    if (add) { const l = linhaMed(); add.closest(".med-grupo").querySelector(".linhas-med").appendChild(l); l.querySelector(".dose").focus(); }
+  });
+  // Animais do bloco 2 mudaram: atualiza as categorias do bloco 5
+  $("#linhas-animais").addEventListener("focusout", () => { if (blocoLigado("med")) setTimeout(atualizarCatsMed, 0); });
+  $("#linhas-animais").addEventListener("click", () => { if (blocoLigado("med")) setTimeout(atualizarCatsMed, 0); });
   $("#add-med-animal").addEventListener("click", () => { const c = cartaoAnimalMed(); $("#lista-med-animais").appendChild(c); c.querySelector(".brinco").focus(); });
   $("#lista-med-animais").addEventListener("click", (e) => {
     // Troca o teclado do brinco entre números e letras (reabre o teclado já trocado)
@@ -1704,7 +1839,7 @@ function ligarEventos() {
   $("#p-faltas").addEventListener("click", (e) => { const b = e.target.closest("[data-reposto]"); if (b) marcarReposto(b.dataset.reposto); });
   form().addEventListener("click", (e) => {
     const rem = e.target.closest("[data-remover]");
-    if (rem) { rem.closest(".linha").remove(); return; }
+    if (rem) { (rem.closest(".med-item") || rem.closest(".linha")).remove(); return; }
     const p = e.target.closest("[data-passo]");
     if (p) passo(p);
   });
@@ -1752,6 +1887,14 @@ function ligarEventos() {
   }));
   ["#busca", "#f-tipo", "#f-periodo"].forEach((s) => $(s).addEventListener("input", () => { limiteLista = 60; renderListas(); }));
   ["#lot-q", "#lot-f"].forEach((s) => $(s).addEventListener("input", renderLotacao));
+  $("#lot-cats").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-cat], [data-cat-limpar]");
+    if (!b) return;
+    if (b.dataset.catLimpar !== undefined) catFiltro.clear();
+    else if (catFiltro.has(b.dataset.cat)) catFiltro.delete(b.dataset.cat);
+    else catFiltro.add(b.dataset.cat);
+    renderLotacao();
+  });
   $("#lot-lista").addEventListener("click", (e) => { const b = e.target.closest("[data-ir]"); if (b) irParaPotreiro(b.dataset.ir); });
   $("#p-periodo").addEventListener("change", renderPainel);
   document.addEventListener("click", (e) => {

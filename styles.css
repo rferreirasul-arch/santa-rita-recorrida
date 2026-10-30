@@ -243,6 +243,19 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .med-cab { display: grid; grid-template-columns: 96px 1fr 36px; gap: 8px; font-size: .78rem; color: var(--muted); font-weight: 700; margin-bottom: 4px; }
 .linha-med { grid-template-columns: 96px 1fr 36px; }
 .linha-med .btn-x { width: 36px; }
+/* Categorias que recebem o medicamento */
+.cats-med { display: flex; flex-wrap: wrap; gap: 6px; }
+.cats-med button { background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; font-size: .85rem; color: var(--muted); min-height: 34px; }
+.cats-med button b { font-variant-numeric: tabular-nums; }
+.cats-med button[aria-pressed="true"] { background: var(--campo); border-color: var(--campo); color: #fff; }
+.cats-med button.todas { font-weight: 700; }
+.cats-med.erro { outline: 2px solid var(--erro, #b3261e); outline-offset: 3px; border-radius: 10px; }
+.med-grupo { border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; background: #fff; }
+.med-grupo-cab { display: flex; justify-content: space-between; align-items: center; font-size: .78rem; color: var(--muted); font-weight: 700; }
+.med-grupo-cab .btn-x { width: 36px; }
+#linhas-med-lote { gap: 12px; }
+.med-item { display: flex; flex-direction: column; gap: 6px; padding-bottom: 10px; border-bottom: 1px dashed var(--line); }
+.med-item .cats-med { padding-left: 2px; }
 .med-animais { display: flex; flex-direction: column; gap: 12px; }
 .med-animal { border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; background: #fff; }
 .med-animal-cab { display: grid; grid-template-columns: 1fr 36px; gap: 8px; align-items: end; }
@@ -380,7 +393,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 
 /* ---------- Lotação ---------- */
 .cats { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-.cats span { background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: .9rem; }
+.cats button { background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: .9rem; color: var(--ink); min-height: 34px; }
+.cats button[aria-pressed="true"] { background: var(--campo); border-color: var(--campo); color: #fff; }
+.cats button.limpar { background: none; border-style: dashed; color: var(--muted); font-weight: 600; }
+.t-ani small.cat-sel { color: var(--ink); font-weight: 700; }
 .cats b { font-variant-numeric: tabular-nums; }
 .lot {
   display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; text-align: left; width: 100%;

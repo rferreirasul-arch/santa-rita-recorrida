@@ -17,10 +17,12 @@ const ABA_FALTAS = "Faltas";
 const ABA_MEDICAMENTOS = "Medicamentos";   // cadastro dos medicamentos
 const ABA_MEDICACOES = "Medicações";       // eventos: uma linha por medicamento aplicado
 
-const CABECALHO_MEDICAMENTOS = ["Medicamento", "Nomes alternativos", "Unidade da dose", "Ativo (SIM/NÃO)"];
+const CABECALHO_MEDICAMENTOS = ["Medicamento", "Nomes alternativos", "Unidade da dose", "Ativo (SIM/NÃO)", "Tipo"];
+// Sugestões da coluna Tipo (dá para digitar outro); o Painel usa Carrapaticida e Vermífugo
+const TIPOS_MEDICAMENTO = ["Vermífugo", "Carrapaticida", "Endectocida", "Antibiótico", "Anti-inflamatório", "Vacina", "Suplemento injetável", "Outro"];
 // Lote inteiro: uma linha por medicamento. Animais: uma linha por medicamento + dose + motivo,
 // com os brincos juntos. As linhas de uma recorrida são refeitas a cada alteração dela.
-const CABECALHO_MEDICACOES = ["Data", "Potreiro", "Aplicado em", "Quantidade de animais", "Dose", "Unidade", "Medicamento", "Brincos", "Motivo", "Registrado por", "ID da recorrida"];
+const CABECALHO_MEDICACOES = ["Data", "Potreiro", "Aplicado em", "Categorias", "Quantidade de animais", "Dose por animal", "Total aplicado", "Unidade", "Medicamento", "Brincos", "Motivo", "Registrado por", "ID da recorrida"];
 const APLICADO_EM = { lote: "Todo o lote", animais: "Animal específico" };
 
 // Aba Faltas: uma linha por mineral em falta no depósito de um potreiro
@@ -134,7 +136,7 @@ function configurar() {
   abaAparelhos_();
   abaFaltas_();
   abaMedicamentos_();
-  abaMedicacoes_();
+  if (!ss.getSheetByName(ABA_MEDICACOES)) abaMedicacoes_(); // se já existe, quem atualiza é a sincronização
 
   const vazia = ss.getSheetByName("Página1") || ss.getSheetByName("Sheet1");
   if (vazia && vazia.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(vazia);
@@ -309,7 +311,7 @@ function sincronizar_(recebidos, alteracoes, usuario, faltasRecebidas) {
     });
 
     if (novos.length) sh.getRange(sh.getLastRow() + 1, 1, novos.length, cab.length).setValues(novos);
-    sincronizarMedicacoes_(tocados);
+    sincronizarMedicacoes_(tocados, base.lista);
     return {
       ok: true,
       usuario: usuario,
@@ -552,9 +554,23 @@ function abaMedicamentos_() {
     sh.getRange(1, 1, 1, CABECALHO_MEDICAMENTOS.length).setValues([CABECALHO_MEDICAMENTOS]).setFontWeight("bold");
     sh.setFrozenRows(1);
   }
+  // Coluna Tipo (versões antigas não tinham): cabeçalho e lista de sugestões
+  if (colunaTipo_(sh) < 0) {
+    const c = Math.max(sh.getLastColumn(), CABECALHO_MEDICAMENTOS.length - 1) + 1;
+    sh.getRange(1, c).setValue("Tipo").setFontWeight("bold");
+    sh.getRange(2, c, Math.max(sh.getMaxRows() - 1, 1), 1).setDataValidation(
+      SpreadsheetApp.newDataValidation().requireValueInList(TIPOS_MEDICAMENTO, true).setAllowInvalid(true).build());
+  }
   return sh;
 }
 
+// Posição (base 0) da coluna Tipo da aba Medicamentos, pelo cabeçalho (-1 se não houver)
+function colunaTipo_(sh) {
+  if (!sh.getLastColumn()) return -1;
+  return sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(norm_).findIndex((c) => c.indexOf("tipo") === 0);
+}
+
+// Devolve { sh, refazer }: refazer = o cabeçalho era de uma versão anterior e as linhas precisam ser refeitas
 function abaMedicacoes_() {
   const ss = SpreadsheetApp.getActive();
   let sh = ss.getSheetByName(ABA_MEDICACOES);
@@ -562,27 +578,31 @@ function abaMedicacoes_() {
     sh = ss.insertSheet(ABA_MEDICACOES);
     sh.setFrozenRows(1);
   }
-  // Cabeçalho novo (ou de uma versão anterior): regrava e oculta só a coluna do ID
+  // Cabeçalho novo (ou de uma versão anterior): apaga as linhas, regrava e oculta só a coluna do ID
   const nCol = CABECALHO_MEDICACOES.length;
-  const atual = sh.getRange(1, 1, 1, nCol).getValues()[0].map(String);
-  if (atual.join("|") !== CABECALHO_MEDICACOES.join("|")) {
+  const atual = sh.getRange(1, 1, 1, Math.max(nCol, sh.getLastColumn())).getValues()[0].map(String);
+  if (atual.slice(0, nCol).join("|") !== CABECALHO_MEDICACOES.join("|") || atual.slice(nCol).some((v) => v.trim())) {
+    sh.clearContents();
     sh.getRange(1, 1, 1, nCol).setValues([CABECALHO_MEDICACOES]).setFontWeight("bold").setBackground("#2f5b8a").setFontColor("#ffffff");
     const n = Math.max(sh.getMaxRows() - 1, 1);
     sh.getRange(2, 1, n, 1).setNumberFormat("dd/mm/yyyy");
-    sh.getRange(2, 8, n, 1).setNumberFormat("@");
+    sh.getRange(2, 10, n, 1).setNumberFormat("@");
     sh.getRange(2, nCol, n, 1).setNumberFormat("@");
-    sh.showColumns(1, nCol);
+    sh.showColumns(1, Math.max(nCol, sh.getMaxColumns()));
     sh.hideColumns(nCol, 1);
+    return { sh: sh, refazer: true };
   }
-  return sh;
+  return { sh: sh, refazer: false };
 }
 
 function lerMedicamentos_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(ABA_MEDICAMENTOS);
   if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues()
+  const iTipo = colunaTipo_(sh);
+  return sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(sh.getLastColumn(), 4)).getValues()
     .filter((l) => String(l[0]).trim() !== "")
-    .map((l) => ({ nome: String(l[0]).trim(), alternativos: String(l[1] || "").trim(), unidade: String(l[2] || "").trim() || "mL", ativo: !ehNao_(l[3]) }));
+    .map((l) => ({ nome: String(l[0]).trim(), alternativos: String(l[1] || "").trim(), unidade: String(l[2] || "").trim() || "mL", ativo: !ehNao_(l[3]),
+      tipo: iTipo >= 0 ? String(l[iTipo] || "").trim() : "" }));
 }
 
 // Linhas da aba Medicações para uma recorrida
@@ -591,9 +611,13 @@ function linhasMedicacao_(r, unidade) {
   if (r.excluido || !med) return [];
   const p = String(r.data || "").split("-");
   const data = p.length === 3 ? new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])) : "";
-  const linha = (qtd, m, brincos, motivo) =>
-    [data, r.potreiro, APLICADO_EM[med.modo === "animais" ? "animais" : "lote"], qtd, Number(m.dose), unidade(m.medicamento), m.medicamento, brincos, motivo, r.registrado_por || "", r.id];
-  if (med.modo !== "animais") return (med.itens || []).map((m) => linha(med.qtd || "", m, "", ""));
+  const linha = (qtd, m, brincos, motivo, categorias) =>
+    [data, r.potreiro, APLICADO_EM[med.modo === "animais" ? "animais" : "lote"], categorias, qtd, Number(m.dose),
+      qtd ? Math.round(Number(qtd) * Number(m.dose) * 100) / 100 : "", unidade(m.medicamento), m.medicamento, brincos, motivo, r.registrado_por || "", r.id];
+  // Lote: o medicamento pode ter ido só para algumas categorias (qtd = soma delas)
+  if (med.modo !== "animais") return (med.itens || []).map((m) => (m.categorias && m.categorias.length)
+    ? linha(m.qtd || "", m, "", "", m.categorias.join(", ")).map((v, i) => (i === 2 ? "Categorias do lote" : v))
+    : linha(med.qtd || "", m, "", "", "Todas"));
   // Animais: junta os que receberam o mesmo medicamento, dose e motivo (brinco é opcional)
   const grupos = {};
   const ordem = [];
@@ -608,13 +632,17 @@ function linhasMedicacao_(r, unidade) {
     const g = grupos[k];
     const sem = g.semBrinco ? (g.semBrinco === 1 ? "1 sem brinco" : g.semBrinco + " sem brinco") : "";
     const txt = g.brincos.join(", ") + (g.brincos.length && sem ? " + " : "") + sem;
-    return linha(g.brincos.length + g.semBrinco, g.m, txt, g.motivo);
+    return linha(g.brincos.length + g.semBrinco, g.m, txt, g.motivo, "");
   });
 }
 
 // Refaz as linhas das recorridas gravadas agora, em ordem de data
-function sincronizarMedicacoes_(tocados) {
-  const sh = abaMedicacoes_();
+// todos: todas as recorridas (usadas para refazer a aba quando o cabeçalho muda de versão)
+function sincronizarMedicacoes_(tocados, todos) {
+  abaMedicamentos_(); // garante a coluna Tipo
+  const aba = abaMedicacoes_();
+  const sh = aba.sh;
+  if (aba.refazer) tocados = (todos || []).filter((r) => r.medicacao && !r.excluido);
   const nCol = CABECALHO_MEDICACOES.length;
   let linhas = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, nCol).getValues().filter((l) => String(l[nCol - 1]).trim()) : [];
   const comMed = tocados.filter((r) => r.medicacao || linhas.some((l) => String(l[nCol - 1]) === r.id));

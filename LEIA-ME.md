@@ -35,6 +35,16 @@ criadas sozinhas conforme aparecem. Isso facilita tabela dinâmica. Lotação: `
 **Minerais**: nome, nomes alternativos, **kg por saco** (usado no kg total e no consumo), Ativo.
 **Categorias**: nome, nomes alternativos, Ativo.
 
+**Medicamentos**: nome, nomes alternativos, unidade da dose, Ativo e **Tipo** (Vermífugo, Carrapaticida, Endectocida…;
+dá para digitar outro ou mais de um separado por vírgula). O Tipo alimenta a sanidade do Painel.
+**Medicações**: montada pelo servidor a partir das recorridas (não editar). Uma linha por medicamento, com as
+categorias que receberam, a quantidade de animais, a dose por animal e o **total aplicado** (dose × animais).
+
+**Painel**: resumo com tabelas e gráficos (animais por categoria, sacos e consumo de mineral, dias sem abastecer,
+mineral em falta, medicamentos e dias após carrapaticida/vermífugo por potreiro). Vem do script `Painel.gs`
+(colar como mais um arquivo no projeto Apps Script). Atualiza ao abrir a planilha, ao trocar o período na célula B4
+e pelo menu **Recorrida > Atualizar painel**. A aba é refeita a cada atualização: não digite nada nela.
+
 Potreiros, categorias e minerais novos podem ser incluídos pelo app. Entram na planilha com uma nota
 dizendo quem incluiu e quando.
 
