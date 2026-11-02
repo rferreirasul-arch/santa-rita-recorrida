@@ -1464,15 +1464,26 @@ function cartao(r) {
     </article>`;
 }
 
+// Filtro por tipo nos Registros: botões com as mesmas cores das etiquetas do cartão.
+// Pode marcar mais de um: mostra a recorrida que tiver qualquer um deles.
+const TIPOS_REG = [
+  { id: "lotacao", nome: "Lotação", cls: "", tem: (r) => r.lotacao === "conferida" },
+  { id: "vazio", nome: "Vazio", cls: "vazio", tem: (r) => r.lotacao === "vazio" },
+  { id: "mineral", nome: "Mineral", cls: "min", tem: (r) => !!r.minerais?.length },
+  { id: "tem", nome: "Tem mineral", cls: "", tem: (r) => !!r.tem_mineral },
+  { id: "falta", nome: "Falta", cls: "falta", tem: (r) => faltasAtivas().some((f) => f.recorrida_id === r.id) },
+  { id: "med", nome: "Medicamento", cls: "med", tem: (r) => !!r.medicacao },
+];
+const tipoFiltro = new Set();
+
 function filtrados() {
   const q = $("#busca").value;
-  const tipo = $("#f-tipo").value;
   const dias = $("#f-periodo").value;
   const desde = dias ? somaDias(hojeISO(), -Number(dias)) : "";
+  const tipos = TIPOS_REG.filter((t) => tipoFiltro.has(t.id));
   return ativos().filter((r) => {
     if (desde && r.data < desde) return false;
-    if (tipo === "animais" && !r.lotacao) return false;
-    if (tipo === "mineral" && !r.minerais?.length) return false;
+    if (tipos.length && !tipos.some((t) => t.tem(r))) return false;
     if (norm(q)) {
       const texto = { nome: `${r.potreiro} ${txtAnimais(r)} ${txtMinerais(r)} ${r.obs || ""}` };
       if (!combina(texto, q)) return false;
@@ -1484,6 +1495,10 @@ function filtrados() {
 function renderListas() {
   const ult = ativos().sort(ordenar).slice(0, 5);
   $("#ultimos").innerHTML = ult.length ? ult.map(cartao).join("") : `<p class="vazio">Nenhuma recorrida registrada ainda.</p>`;
+
+  $("#f-tipos").innerHTML = TIPOS_REG.map((t) =>
+    `<button type="button" class="tipo ${t.cls}" data-tipo="${t.id}" aria-pressed="${tipoFiltro.has(t.id)}">${t.nome}</button>`).join("")
+    + (tipoFiltro.size ? `<button type="button" class="limpar" data-tipo-limpar>Limpar filtro</button>` : "");
 
   const lista = filtrados();
   $("#contagem").textContent = `${lista.length} recorrida${lista.length === 1 ? "" : "s"}`;
@@ -1885,7 +1900,16 @@ function ligarEventos() {
     if (b.classList.contains("on")) window.scrollTo({ top: 0, behavior: "smooth" });
     else mostrarAba(b.dataset.tab);
   }));
-  ["#busca", "#f-tipo", "#f-periodo"].forEach((s) => $(s).addEventListener("input", () => { limiteLista = 60; renderListas(); }));
+  ["#busca", "#f-periodo"].forEach((s) => $(s).addEventListener("input", () => { limiteLista = 60; renderListas(); }));
+  $("#f-tipos").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-tipo], [data-tipo-limpar]");
+    if (!b) return;
+    if (b.dataset.tipoLimpar !== undefined) tipoFiltro.clear();
+    else if (tipoFiltro.has(b.dataset.tipo)) tipoFiltro.delete(b.dataset.tipo);
+    else tipoFiltro.add(b.dataset.tipo);
+    limiteLista = 60;
+    renderListas();
+  });
   ["#lot-q", "#lot-f"].forEach((s) => $(s).addEventListener("input", renderLotacao));
   $("#lot-cats").addEventListener("click", (e) => {
     const b = e.target.closest("[data-cat], [data-cat-limpar]");

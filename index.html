@@ -234,13 +234,8 @@
     <!-- ===== Registros (recorridas já lançadas) ===== -->
     <section id="tab-consulta" class="tab" hidden>
       <div class="card">
-        <div class="filtros">
+        <div class="filtros filtros-2">
           <input type="search" id="busca" placeholder="Buscar potreiro, categoria, mineral ou observação">
-          <select id="f-tipo">
-            <option value="">Tudo</option>
-            <option value="animais">Com lotação</option>
-            <option value="mineral">Com mineral</option>
-          </select>
           <select id="f-periodo">
             <option value="30">Últimos 30 dias</option>
             <option value="90">Últimos 90 dias</option>
@@ -248,6 +243,7 @@
             <option value="">Todo o período</option>
           </select>
         </div>
+        <div id="f-tipos" class="cats tipos"></div>
         <div class="lista-topo">
           <span id="contagem" class="muted"></span>
           <button type="button" id="btn-csv" class="btn-light">Baixar planilha (CSV)</button>
