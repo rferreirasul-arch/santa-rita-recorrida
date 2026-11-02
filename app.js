@@ -1438,7 +1438,7 @@ function cartao(r) {
     r.lotacao === "conferida" ? `<span class="badge">Lotação</span>` : "",
     r.lotacao === "vazio" ? `<span class="badge vazio">Vazio</span>` : "",
     r.minerais?.length ? `<span class="badge min">Mineral</span>` : "",
-    r.tem_mineral ? `<span class="badge">Tem mineral</span>` : "",
+    r.tem_mineral ? `<span class="badge tem">Tem mineral</span>` : "",
     r.medicacao ? `<span class="badge med">Medicamento</span>` : "",
   ].join("");
   const fs = faltasAtivas().filter((f) => f.recorrida_id === r.id);
@@ -1470,7 +1470,7 @@ const TIPOS_REG = [
   { id: "lotacao", nome: "Lotação", cls: "", tem: (r) => r.lotacao === "conferida" },
   { id: "vazio", nome: "Vazio", cls: "vazio", tem: (r) => r.lotacao === "vazio" },
   { id: "mineral", nome: "Mineral", cls: "min", tem: (r) => !!r.minerais?.length },
-  { id: "tem", nome: "Tem mineral", cls: "", tem: (r) => !!r.tem_mineral },
+  { id: "tem", nome: "Tem mineral", cls: "tem", tem: (r) => !!r.tem_mineral },
   { id: "falta", nome: "Falta", cls: "falta", tem: (r) => faltasAtivas().some((f) => f.recorrida_id === r.id) },
   { id: "med", nome: "Medicamento", cls: "med", tem: (r) => !!r.medicacao },
 ];

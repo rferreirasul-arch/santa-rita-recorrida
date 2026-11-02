@@ -14,6 +14,8 @@
   --perda-bg: #f8dfdc;
   --aviso: #b26b12;
   --aviso-bg: #f7ead6;
+  --tem: #9a6a12;          /* ocre: "tem mineral" (parente do terracota do mineral) */
+  --tem-bg: #f5ecd2;
   --campo: #3d6b3f;        /* verde do potreiro */
   --radius: 14px;
   --serif: "Zilla Slab", Georgia, serif;
@@ -371,6 +373,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .estado.pend { color: var(--aviso); font-weight: 600; }
 .badge { font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--ok-bg); color: var(--ok); }
 .badge.min { background: var(--primary-bg); color: var(--primary); }
+.badge.tem { background: var(--tem-bg); color: var(--tem); }
 .badge.vazio { background: var(--field); color: var(--muted); padding: 2px 8px; }
 .badge.falta { background: var(--perda-bg); color: var(--perda); }
 .badge.med { background: #e6eef8; color: #2f5b8a; }
@@ -402,11 +405,13 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .cats.tipos { margin: 12px 0 0; }
 .cats button.tipo { font-weight: 700; font-size: .8rem; letter-spacing: .04em; text-transform: uppercase; border-color: transparent; background: var(--ok-bg); color: var(--ok); }
 .cats button.tipo.min { background: var(--primary-bg); color: var(--primary); }
+.cats button.tipo.tem { background: var(--tem-bg); color: var(--tem); }
 .cats button.tipo.vazio { background: var(--field); color: var(--muted); }
 .cats button.tipo.falta { background: var(--perda-bg); color: var(--perda); }
 .cats button.tipo.med { background: #e6eef8; color: #2f5b8a; }
 .cats button.tipo[aria-pressed="true"] { background: var(--ok); color: #fff; }
 .cats button.tipo.min[aria-pressed="true"] { background: var(--primary); }
+.cats button.tipo.tem[aria-pressed="true"] { background: var(--tem); }
 .cats button.tipo.vazio[aria-pressed="true"] { background: var(--muted); }
 .cats button.tipo.falta[aria-pressed="true"] { background: var(--perda); }
 .cats button.tipo.med[aria-pressed="true"] { background: #2f5b8a; }
