@@ -457,6 +457,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 #lot-kpis .kpi b { font-size: 1.35rem; }
 #lot-kpis .kpi span { font-size: .62rem; letter-spacing: .04em; }
 #lot-kpis .kpi small { display: none; }
+/* Cartões da Lotação são filtros: marcado = cor do campo, como os botões de categoria */
+#lot-kpis button.kpi { font: inherit; color: var(--ink); cursor: pointer; width: 100%; min-width: 0; }
+#lot-kpis button.kpi[aria-pressed="true"] { background: var(--campo); border-color: var(--campo); color: #fff; }
+#lot-kpis button.kpi[aria-pressed="true"] span { color: rgba(255,255,255,.85); }
 
 /* ---------- Painel ---------- */
 .painel-topo { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 12px; }
