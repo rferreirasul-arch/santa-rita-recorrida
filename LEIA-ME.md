@@ -39,6 +39,9 @@ criadas sozinhas conforme aparecem. Isso facilita tabela dinâmica. Lotação: `
 dá para digitar outro ou mais de um separado por vírgula). O Tipo alimenta a sanidade do Painel.
 **Medicações**: montada pelo servidor a partir das recorridas (não editar). Uma linha por medicamento, com as
 categorias que receberam, a quantidade de animais, a dose por animal e o **total aplicado** (dose × animais).
+**Medicação sem potreiro**: com Medicamentos ligado e sem potreiro escolhido, ao salvar o app pergunta se lança
+só a medicação. Se sim, grava um registro com o potreiro em branco (aparece como "Sem potreiro"): os animais
+conferidos ficam só na medicação e não mudam a lotação; mineral, tem mineral e falta no depósito não são salvos.
 
 **Painel**: resumo com tabelas e gráficos (animais por categoria, sacos e consumo de mineral, dias sem abastecer,
 mineral em falta, medicamentos e dias após carrapaticida/vermífugo por potreiro). Vem do script `Painel.gs`

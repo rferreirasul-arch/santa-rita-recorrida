@@ -1291,7 +1291,8 @@ function prepararMed() {
   const lot = potSel ? estadoPotreiros().get(norm(potSel))?.lotacao : null;
   $("#dica-med").textContent = lot?.lotacao === "conferida"
     ? `Lote: ${txtEspecies(lot)} (lotação de ${fmtData(lot.data)}). Se conferir os animais acima, vale a contagem nova.`
-    : "Sem lotação registrada para este potreiro: confira os animais acima para registrar quantos foram medicados.";
+    : potSel ? "Sem lotação registrada para este potreiro: confira os animais acima para registrar quantos foram medicados."
+    : "Sem potreiro escolhido: confira os animais acima para registrar quantos foram medicados.";
 }
 
 function limparMed() {
@@ -1444,20 +1445,23 @@ function editar(id) {
   editId = id;
   campo("data").value = r.data;
   campo("obs").value = r.obs || "";
-  escolherPotreiro(r.potreiro, { preencher: false });
+  if (r.potreiro) escolherPotreiro(r.potreiro, { preencher: false });
   $("#linhas-animais").innerHTML = "";
   $("#linhas-mineral").innerHTML = "";
-  (r.animais || []).forEach((a) => $("#linhas-animais").appendChild(linhaAnimal(a)));
+  // Medicação sem potreiro: os animais conferidos ficaram guardados na medicação
+  const animaisMed = !r.potreiro && !r.lotacao ? r.medicacao?.lote || [] : [];
+  (animaisMed.length ? animaisMed : r.animais || []).forEach((a) => $("#linhas-animais").appendChild(linhaAnimal(a)));
   (r.minerais || []).forEach((m) => $("#linhas-mineral").appendChild(linhaMineral(m)));
   marcarVazio(r.lotacao === "vazio");
   marcarTemMineral(!!r.tem_mineral);
   preencherMed(r.medicacao);
-  ligarBloco("animais", !!r.lotacao);
+  ligarBloco("animais", !!r.lotacao || animaisMed.length > 0);
   ligarBloco("mineral", !!r.minerais?.length);
+  atualizarCatsMed();
   faltaSel = new Set(faltasAtivas().filter((f) => f.recorrida_id === id).map((f) => f.mineral));
   ligarBloco("falta", faltaSel.size > 0);
-  if (!r.lotacao) { $("#linhas-animais").innerHTML = ""; }
-  $("#form-titulo").textContent = `Editando: ${r.potreiro} (${fmtData(r.data)})`;
+  if (!r.lotacao && !animaisMed.length) { $("#linhas-animais").innerHTML = ""; }
+  $("#form-titulo").textContent = `Editando: ${nomePot(r)} (${fmtData(r.data)})`;
   $("#btn-salvar").textContent = "Salvar alterações";
   $("#btn-cancelar").hidden = false;
   $("#btn-limpar").hidden = true;
@@ -1467,7 +1471,7 @@ function editar(id) {
 
 async function excluir(id) {
   const r = registros.find((x) => x.id === id);
-  if (!r || !confirm(`Excluir a recorrida de ${r.potreiro} (${fmtData(r.data)})?`)) return;
+  if (!r || !confirm(`Excluir o registro de ${nomePot(r)} (${fmtData(r.data)})?`)) return;
   Object.assign(r, { excluido: true, atualizado_em: new Date().toISOString(), _pendente: true });
   await db.gravar(r);
   await gravarFaltasDaRecorrida(r, new Set(), r.atualizado_em);
@@ -1477,6 +1481,17 @@ async function excluir(id) {
   sincronizar();
 }
 
+// Pergunta se lança só a medicação quando o potreiro não foi escolhido (resolve true = sim)
+function perguntarSemPotreiro(avisos) {
+  const dlg = $("#dlg-sem-pot");
+  dlg.returnValue = "";
+  $("#sp-aviso").textContent = avisos.join(" ");
+  $("#sp-aviso").hidden = !avisos.length;
+  dlg.showModal();
+  return new Promise((ok) => dlg.addEventListener("close", () => ok(dlg.returnValue === "sim"), { once: true }));
+}
+const nomePot = (r) => r.potreiro || "Sem potreiro";
+
 async function salvar(ev) {
   ev.preventDefault();
   $$(".erro", form()).forEach((e) => e.classList.remove("erro"));
@@ -1484,11 +1499,14 @@ async function salvar(ev) {
 
   if (!campo("data").value) return falha("Informe a data.", campo("data"));
   if (campo("data").value > hojeISO()) return falha("A data não pode ser no futuro.", campo("data"));
-  if (!potSel) { window.scrollTo({ top: 0, behavior: "smooth" }); return falha("Escolha o potreiro.", $("#pot-q")); }
+  const irParaPotreiro = () => { window.scrollTo({ top: 0, behavior: "smooth" }); falha("Escolha o potreiro.", $("#pot-q")); };
+  // Sem potreiro só dá para lançar medicação (a pergunta vem depois de conferir os medicamentos)
+  const semPot = !potSel;
+  if (semPot && !blocoLigado("med")) return irParaPotreiro();
 
   const comAnimais = blocoLigado("animais");
-  const comMineral = blocoLigado("mineral");
-  const comFalta = blocoLigado("falta");
+  const comMineral = blocoLigado("mineral") && !semPot;
+  const comFalta = blocoLigado("falta") && !semPot;
   const comMed = blocoLigado("med");
   if (!comAnimais && !comMineral && !comFalta && !temMineral && !comMed) return falha("Ligue pelo menos uma opção: animais, mineral no cocho, tem mineral, falta no depósito ou medicamentos.");
   const repostos = new Set([...repostoSel].filter((id) => faltasAbertas().some((f) => f.id === id && mesmoNome(f.potreiro, potSel))));
@@ -1516,17 +1534,30 @@ async function salvar(ev) {
     medicacao = r.med;
   }
 
+  if (semPot) {
+    const avisos = [];
+    if (animais.length) avisos.push("Os animais conferidos ficam só na medicação (a lotação não muda).");
+    if (blocoLigado("mineral") || blocoLigado("falta") || temMineral) avisos.push("Mineral no cocho, tem mineral e falta no depósito precisam de potreiro e não serão salvos.");
+    if (!await perguntarSemPotreiro(avisos)) return irParaPotreiro();
+    // Sem potreiro não há lotação para consultar depois: guarda as categorias na própria medicação
+    if (medicacao.modo === "lote" && animais.length) {
+      medicacao.lote = animais;
+      medicacao.itens = medicacao.itens.map((m) => (m.categorias?.length ? m
+        : { ...m, categorias: animais.map((a) => a.categoria), qtd: medicacao.qtd }));
+    }
+  }
+
   const agora = new Date().toISOString();
   const antigo = editId ? registros.find((r) => r.id === editId) : null;
   const rec = {
     ...(antigo || {}),
     id: editId || novoId(),
     data: campo("data").value,
-    potreiro: potSel,
-    lotacao: comAnimais ? (vazio ? "vazio" : "conferida") : "",
-    animais,
+    potreiro: semPot ? "" : potSel,
+    lotacao: semPot ? "" : comAnimais ? (vazio ? "vazio" : "conferida") : "",
+    animais: semPot ? [] : animais,
     minerais,
-    tem_mineral: temMineral,
+    tem_mineral: semPot ? false : temMineral,
     medicacao,
     obs: campo("obs").value.trim(),
     registrado_por: antigo?.registrado_por || usuario?.email || "demo",
@@ -1539,7 +1570,7 @@ async function salvar(ev) {
   await gravarFaltasDaRecorrida(rec, comFalta ? faltaSel : new Set(), agora);
   if (comFalta) await gravarRepostosDaRecorrida(rec, repostos, agora);
   registros = await db.todos();
-  toast(antigo ? "Alterações salvas." : `Recorrida de ${rec.potreiro} registrada.`);
+  toast(antigo ? "Alterações salvas." : semPot ? "Medicação registrada (sem potreiro)." : `Recorrida de ${rec.potreiro} registrada.`);
   limparForm();
   renderTudo();
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1564,7 +1595,7 @@ function cartao(r) {
     <article class="reg">
       <div class="reg-data"><b>${d}/${m}</b><span>${a}</span></div>
       <div>
-        <div class="reg-pot">${esc(r.potreiro)} ${badges}${fs.length ? `<span class="badge falta">Falta</span>` : ""}</div>
+        <div class="reg-pot">${r.potreiro ? esc(r.potreiro) : `<span class="muted-s">Sem potreiro</span>`} ${badges}${fs.length ? `<span class="badge falta">Falta</span>` : ""}</div>
         ${r.lotacao ? `<div class="reg-linha"><i>Animais</i>${esc(txtAnimais(r))}${r.animais?.length > 1 ? ` <b>(${fmtNum(tot)})</b>` : ""}</div>` : ""}
         ${r.minerais?.length ? `<div class="reg-linha"><i>Mineral</i>${esc(txtMinerais(r))}</div>` : ""}
         ${r.medicacao ? `<div class="reg-linha"><i>Medicamentos</i>${esc(txtMed(r.medicacao))}</div>` : ""}
@@ -1602,7 +1633,7 @@ function filtrados() {
     if (desde && r.data < desde) return false;
     if (tipos.length && !tipos.some((t) => t.tem(r))) return false;
     if (norm(q)) {
-      const texto = { nome: `${r.potreiro} ${txtAnimais(r)} ${txtMinerais(r)} ${r.obs || ""}` };
+      const texto = { nome: `${nomePot(r)} ${txtAnimais(r)} ${txtMinerais(r)} ${r.obs || ""}` };
       if (!combina(texto, q)) return false;
     }
     return true;
