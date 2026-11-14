@@ -47,6 +47,10 @@ e pelo menu **Recorrida > Atualizar painel**. A aba é refeita a cada atualizaç
 
 Potreiros, categorias e minerais novos podem ser incluídos pelo app. Entram na planilha com uma nota
 dizendo quem incluiu e quando.
+Ao incluir **medicamento**, **categoria** ou **mineral** novos, o app abre uma janela para completar o cadastro:
+medicamento pede nomes alternativos, unidade da dose e tipo; categoria pede nomes alternativos e espécie;
+mineral pede nomes alternativos e kg por saco.
+Unidade, tipo e espécie mostram os já usados na planilha, com a opção de digitar um novo.
 
 ## Configuração
 

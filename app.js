@@ -331,10 +331,12 @@ function aplicarAlteracao(cat, a) {
   const lista = { potreiro: cat.potreiros, mineral: cat.minerais, categoria: cat.categorias, medicamento: cat.medicamentos }[a.tipo];
   if (lista) {
     if (!lista.some((i) => mesmoNome(i.nome, a.nome))) {
+      const alternativos = a.alternativos || "";
       lista.push(a.tipo === "potreiro"
-        ? { nome: a.nome, alternativos: "", ativo: true, cochos: [null, null], contorno: "" }
-        : a.tipo === "medicamento" ? { nome: a.nome, alternativos: "", ativo: true, unidade: "mL" }
-        : { nome: a.nome, alternativos: "", ativo: true, kg: "" });
+        ? { nome: a.nome, alternativos, ativo: true, cochos: [null, null], contorno: "" }
+        : a.tipo === "medicamento" ? { nome: a.nome, alternativos, ativo: true, unidade: a.unidade || "mL", tipo: a.tipoMed || "" }
+        : a.tipo === "categoria" ? { nome: a.nome, alternativos, ativo: true, especie: a.especie || "" }
+        : { nome: a.nome, alternativos, ativo: true, kg: a.kg || "" });
     }
     return;
   }
@@ -776,15 +778,130 @@ function acertarCombo(inp) {
   inp.classList.toggle("erro", !!inp.value.trim() && !achado);
 }
 
+const limparNome = (s) => { s = String(s || "").trim().replace(/\s+/g, " "); return s && s[0].toUpperCase() + s.slice(1); };
+
+// Devolve o nome do item adicionado (ou "" se a pessoa cancelar a janela)
 async function adicionarItem(tipo, nome) {
-  nome = nome.trim().replace(/\s+/g, " ");
-  nome = nome[0].toUpperCase() + nome.slice(1);
-  if (!acharItem(listaDoTipo(tipo), nome)) {
-    await registrarAlteracao({ tipo, nome });
-    const rot = NOME_TIPO[tipo];
-    toast(`${rot[0].toUpperCase() + rot.slice(1)} “${nome}” adicionado à lista.`);
+  nome = limparNome(nome);
+  const existe = acharItem(listaDoTipo(tipo), nome);
+  if (existe) return existe.nome;
+  return abrirNovoItem(tipo, nome);
+}
+
+// ---------- Janela: novo medicamento ou categoria ----------
+// Mesmos tipos da validação da aba Medicamentos (Code.gs)
+const TIPOS_MEDICAMENTO = ["Vermífugo", "Carrapaticida", "Endectocida", "Antibiótico", "Anti-inflamatório", "Vacina clostridiose", "Vacina reprodutiva", "Vacina", "Suplemento injetável", "Outro"];
+const NOVA_OPCAO = "__nova__";
+
+// Valores já usados numa coluna, sem repetir (ignora maiúscula/acento)
+function valoresUsados(lista, campo, base = []) {
+  const out = [];
+  // O Tipo pode ter mais de um, separado por vírgula
+  const partes = (i) => (campo === "tipo" ? String(i[campo] || "").split(",") : [i[campo]]);
+  [...base, ...lista.flatMap(partes)].forEach((v) => {
+    v = String(v).trim();
+    if (v && !out.some((o) => mesmoNome(o, v))) out.push(v);
+  });
+  return out;
+}
+
+function encherSelect(sel, valores, padrao, rotNova) {
+  sel.innerHTML = (padrao === "" ? `<option value="">Escolha…</option>` : "")
+    + valores.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("")
+    + `<option value="${NOVA_OPCAO}">+ ${esc(rotNova)}…</option>`;
+  sel.value = padrao;
+  const novo = $("#" + sel.dataset.novoCampo);
+  novo.value = "";
+  novo.hidden = true;
+  sel.classList.remove("erro");
+  novo.classList.remove("erro");
+}
+
+// Valor escolhido no select (ou o digitado em "+ Nova…")
+function valorSelect(sel) {
+  if (sel.value !== NOVA_OPCAO) return sel.value;
+  const v = $("#" + sel.dataset.novoCampo).value;
+  // Unidade fica como digitada (mL, g); tipo e espécie com a primeira letra maiúscula
+  return sel.id === "ni-unidade" ? v.trim().replace(/\s+/g, " ") : limparNome(v);
+}
+
+let novoItemTipo = null, novoItemFim = null;
+const NOVO_TITULO = { medicamento: "Novo medicamento", categoria: "Nova categoria", mineral: "Novo mineral" };
+
+function abrirNovoItem(tipo, nome) {
+  novoItemTipo = tipo;
+  const med = tipo === "medicamento";
+  $("#ni-titulo").textContent = NOVO_TITULO[tipo];
+  $("#ni-rot-nome").textContent = { medicamento: "Medicamento", categoria: "Categoria", mineral: "Mineral" }[tipo];
+  $("#ni-nome").value = nome;
+  $("#ni-alt").value = "";
+  $("#ni-alt").placeholder = { medicamento: "ex.: ivomec; ivermectina", categoria: "ex.: terneiro; ternera", mineral: "ex.: proteico; P30" }[tipo];
+  $("#ni-campos-med").hidden = !med;
+  $("#ni-campos-cat").hidden = tipo !== "categoria";
+  $("#ni-campos-min").hidden = tipo !== "mineral";
+  $("#ni-kg").value = "";
+  $("#ni-kg").classList.remove("erro");
+  if (med) {
+    const meds = catalogo.medicamentos || [];
+    encherSelect($("#ni-unidade"), valoresUsados(meds, "unidade", ["mL"]), "mL", "Nova unidade");
+    encherSelect($("#ni-tipo"), valoresUsados(meds, "tipo", TIPOS_MEDICAMENTO), "", "Novo tipo");
+  } else if (tipo === "categoria") {
+    const esp = valoresUsados(catalogo.categorias, "especie");
+    encherSelect($("#ni-especie"), esp, esp[0] || "", "Nova espécie");
   }
-  return nome;
+  $("#ni-nome").classList.remove("erro");
+  conferirNovoItem();
+  $("#dlg-item").showModal();
+  $("#ni-alt").focus();
+  return new Promise((res) => { novoItemFim = res; });
+}
+
+function conferirNovoItem() {
+  const nome = $("#ni-nome").value.trim();
+  const existe = nome && acharItem(listaDoTipo(novoItemTipo), nome);
+  $("#ni-aviso").hidden = !existe;
+  if (existe) $("#ni-aviso").textContent = `Já existe “${existe.nome}”. Ao confirmar, ele será escolhido.`;
+  return existe;
+}
+
+async function salvarNovoItem(ev) {
+  ev.preventDefault();
+  const tipo = novoItemTipo;
+  const nome = limparNome($("#ni-nome").value);
+  if (!nome) { $("#ni-nome").classList.add("erro"); $("#ni-nome").focus(); return; }
+  const existe = conferirNovoItem();
+  if (existe) { fecharNovoItem(existe.nome); return; }
+  // Kg por saco: opcional (ração a granel fica em branco), mas se preencher tem de ser número
+  const kgTxt = $("#ni-kg").value.trim().replace(",", ".");
+  const kg = kgTxt ? Number(kgTxt) : "";
+  if (tipo === "mineral" && kgTxt && !(kg > 0 && kg <= 1000)) { $("#ni-kg").classList.add("erro"); $("#ni-kg").focus(); return; }
+  // Selects obrigatórios (o tipo do medicamento pode ficar em branco)
+  const obrig = { medicamento: [$("#ni-unidade")], categoria: [$("#ni-especie")] }[tipo] || [];
+  for (const s of obrig) {
+    if (!valorSelect(s)) {
+      const alvo = s.value === NOVA_OPCAO ? $("#" + s.dataset.novoCampo) : s;
+      alvo.classList.add("erro");
+      alvo.focus();
+      return;
+    }
+  }
+  if ($("#ni-tipo").value === NOVA_OPCAO && !valorSelect($("#ni-tipo")) && tipo === "medicamento") {
+    $("#ni-tipo-novo").classList.add("erro"); $("#ni-tipo-novo").focus(); return;
+  }
+  const alternativos = $("#ni-alt").value.split(/[;,]/).map((s) => s.trim()).filter(Boolean).join("; ");
+  const extra = tipo === "medicamento" ? { unidade: valorSelect($("#ni-unidade")), tipoMed: valorSelect($("#ni-tipo")) }
+    : tipo === "categoria" ? { especie: valorSelect($("#ni-especie")) }
+    : { kg };
+  await registrarAlteracao({ tipo, nome, alternativos, ...extra });
+  toast(`${{ medicamento: "Medicamento", categoria: "Categoria", mineral: "Mineral" }[tipo]} “${nome}” adicionad${tipo === "categoria" ? "a" : "o"} à lista.`);
+  fecharNovoItem(nome);
+}
+
+function fecharNovoItem(nome) {
+  const fim = novoItemFim;
+  novoItemFim = null;
+  if ($("#dlg-item").open) $("#dlg-item").close();
+  fim?.(nome);
 }
 
 // =====================================================================
@@ -1798,6 +1915,18 @@ function ligarEventos() {
   $("#cap-cancelar").addEventListener("click", pararCaptura);
   $("#cap-gravar").addEventListener("click", gravarCaptura);
   $("#form-pot").addEventListener("submit", salvarNovoPotreiro);
+  $("#form-item").addEventListener("submit", salvarNovoItem);
+  $("#ni-nome").addEventListener("input", () => { $("#ni-nome").classList.remove("erro"); conferirNovoItem(); });
+  // Cancelar, × ou Esc (se a janela já foi reaberta para outro item, não mexe nela)
+  $("#dlg-item").addEventListener("close", () => { if (!$("#dlg-item").open) fecharNovoItem(""); });
+  // "+ Nova…" nos selects mostra o campo para digitar
+  $$("#dlg-item select").forEach((s) => s.addEventListener("change", () => {
+    const novo = $("#" + s.dataset.novoCampo);
+    s.classList.remove("erro");
+    novo.hidden = s.value !== NOVA_OPCAO;
+    if (!novo.hidden) novo.focus();
+  }));
+  $$("#dlg-item input").forEach((i) => i.addEventListener("input", () => i.classList.remove("erro")));
   $("#np-nome").addEventListener("input", () => { $("#np-nome").classList.remove("erro"); conferirNovoPotreiro(); });
 
   // Blocos de animais e mineral
@@ -1883,9 +2012,12 @@ function ligarEventos() {
     const op = e.target.closest("[data-opcao],[data-novo-item]");
     if (!op) return;
     const inp = op.closest(".combo").querySelector(".combo-in");
-    inp.value = op.dataset.opcao || await adicionarItem(op.closest(".combo").dataset.tipo, op.dataset.novoItem);
-    inp.classList.remove("erro");
+    const tipo = op.closest(".combo").dataset.tipo;
     fecharCombos();
+    const valor = op.dataset.opcao || await adicionarItem(tipo, op.dataset.novoItem);
+    if (!valor) { inp.focus(); return; } // cancelou a janela de cadastro
+    inp.value = valor;
+    inp.classList.remove("erro");
     inp.blur();
     if (inp.closest("#falta-combo")) adicionarFaltaDoCombo(inp);
   });

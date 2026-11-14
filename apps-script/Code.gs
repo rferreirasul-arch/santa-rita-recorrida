@@ -350,11 +350,23 @@ function aplicarAlteracao_(a, usuario) {
     const sh = a.tipo === "medicamento" ? abaMedicamentos_() : ss.getSheetByName(aba);
     const cc = a.tipo === "categoria" ? colunasCategorias_(sh) : null;
     if (linhaPorNome_(sh, nome, cc ? cc.nome + 1 : 1)) return; // já existe
-    let linha = a.tipo === "mineral" ? [nome, "", "", "SIM"] : a.tipo === "medicamento" ? [nome, "", "mL", "SIM"] : [nome, "", "SIM"];
+    const txt = (v, max) => String(v || "").trim().slice(0, max);
+    const alt = txt(a.alternativos, 200);
+    const kg = Number(a.kg);
+    let linha = a.tipo === "mineral" ? [nome, alt, kg > 0 && kg <= 1000 ? kg : "", "SIM"] : [nome, alt, "SIM"];
+    if (a.tipo === "medicamento") {
+      // Unidade e Tipo vêm da janela de cadastro do app (Tipo pela posição no cabeçalho)
+      const iTipo = colunaTipo_(sh);
+      linha = new Array(Math.max(sh.getLastColumn(), CABECALHO_MEDICAMENTOS.length)).fill("");
+      linha[0] = nome; linha[1] = alt; linha[2] = txt(a.unidade, 30) || "mL"; linha[3] = "SIM";
+      if (iTipo >= 0) linha[iTipo] = txt(a.tipoMed, 80);
+    }
     if (cc) {
-      // Monta a linha pelo cabeçalho; a espécie fica em branco para preencher na planilha
+      // Monta a linha pelo cabeçalho; a espécie vem do app (versões antigas mandam em branco)
       linha = new Array(Math.max(sh.getLastColumn(), 3)).fill("");
       linha[cc.nome] = nome;
+      if (cc.alternativos >= 0) linha[cc.alternativos] = alt;
+      if (cc.especie >= 0) linha[cc.especie] = txt(a.especie, 30);
       if (cc.ativo >= 0) linha[cc.ativo] = "SIM";
     }
     sh.appendRow(linha);

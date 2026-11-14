@@ -348,6 +348,54 @@
   </form>
 </dialog>
 
+<!-- ===== Janela: novo medicamento ou categoria ===== -->
+<dialog id="dlg-item" class="dlg">
+  <form method="dialog" id="form-item" novalidate>
+    <div class="dlg-cab">
+      <h2 id="ni-titulo">Novo medicamento</h2>
+      <button type="button" class="dlg-x" data-fechar aria-label="Fechar">×</button>
+    </div>
+    <label class="field">
+      <span id="ni-rot-nome">Medicamento</span>
+      <input type="text" id="ni-nome" autocomplete="off" autocapitalize="sentences" maxlength="80">
+    </label>
+    <p id="ni-aviso" class="aviso" hidden></p>
+    <label class="field">
+      <span>Nomes alternativos <small>(opcional, separados por ponto e vírgula)</small></span>
+      <input type="text" id="ni-alt" autocomplete="off" autocapitalize="off" maxlength="200" placeholder="ex.: ivomec; ivermectina">
+    </label>
+    <div id="ni-campos-med">
+      <label class="field">
+        <span>Unidade da dose</span>
+        <select id="ni-unidade" data-novo-campo="ni-unidade-nova"></select>
+        <input type="text" id="ni-unidade-nova" autocomplete="off" maxlength="30" placeholder="Nova unidade" hidden>
+      </label>
+      <label class="field">
+        <span>Tipo</span>
+        <select id="ni-tipo" data-novo-campo="ni-tipo-novo"></select>
+        <input type="text" id="ni-tipo-novo" autocomplete="off" autocapitalize="sentences" maxlength="40" placeholder="Novo tipo" hidden>
+      </label>
+    </div>
+    <div id="ni-campos-min">
+      <label class="field">
+        <span>Kg por saco <small>(em branco se não vier em saco)</small></span>
+        <input type="text" id="ni-kg" inputmode="decimal" autocomplete="off" maxlength="6" placeholder="ex.: 30">
+      </label>
+    </div>
+    <div id="ni-campos-cat">
+      <label class="field">
+        <span>Espécie</span>
+        <select id="ni-especie" data-novo-campo="ni-especie-nova"></select>
+        <input type="text" id="ni-especie-nova" autocomplete="off" autocapitalize="sentences" maxlength="30" placeholder="Nova espécie" hidden>
+      </label>
+    </div>
+    <div class="cap-btns">
+      <button type="button" class="btn-light" data-fechar>Cancelar</button>
+      <button type="submit" class="btn-primary">Adicionar</button>
+    </div>
+  </form>
+</dialog>
+
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <script src="config.js"></script>
