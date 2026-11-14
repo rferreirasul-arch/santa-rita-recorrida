@@ -387,6 +387,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 
 .filtros { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; }
 .filtros-2 { grid-template-columns: 2fr 1fr; }
+.filtros-1 { grid-template-columns: 1fr; }
 @media (max-width: 720px) { .filtros { grid-template-columns: 1fr 1fr; } .filtros input { grid-column: 1 / -1; } }
 @media (max-width: 720px) { .filtros-2 { grid-template-columns: 1fr; } }
 .lista-topo { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; gap: 10px; }

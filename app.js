@@ -1649,7 +1649,7 @@ function baixarCsv() {
 // =====================================================================
 // Filtro por categoria na Lotação (pode marcar mais de uma: mostra quem tem qualquer uma delas)
 const catFiltro = new Set();
-const espFiltro = new Set(); // espécies marcadas nos cartões (Bovinos, Ovinos…)
+const topoFiltro = new Set(); // cartões marcados: "esp:Bovinos", "ocupados", "vazios", "sem"
 
 function renderLotacao() {
   const estado = estadoPotreiros();
@@ -1671,33 +1671,37 @@ function renderLotacao() {
   ocupados.forEach((l) => Object.entries(porEspecie(l.lot)).forEach(([e, n]) => { totEsp[e] = (totEsp[e] || 0) + n; }));
   if (!totEsp.Bovinos) totEsp.Bovinos = 0;
   const especies = Object.keys(totEsp).filter((e) => e === "Bovinos" || totEsp[e] > 0).sort(ordemEspecie);
-  [...espFiltro].forEach((e) => { if (!especies.includes(e)) espFiltro.delete(e); });
-  const f = $("#lot-f").value;
-  // Os cartões também são filtros: espécie (Bovinos, Ovinos…) ou situação (Ocupados, Vazios, Sem info)
-  const kpi = (v, r, filtro, ligado) => `<button type="button" class="kpi" data-kpi="${esc(filtro)}" aria-pressed="${ligado}"><b>${v}</b><span>${r}</span></button>`;
+  // Cartões de cima (espécies e situação): um ou mais, "OU" entre eles
+  [...topoFiltro].forEach((k) => { if (k.startsWith("esp:") && !especies.includes(k.slice(4))) topoFiltro.delete(k); });
+  const kpi = (v, r, filtro) => `<button type="button" class="kpi" data-kpi="${esc(filtro)}" aria-pressed="${topoFiltro.has(filtro)}"><b>${v}</b><span>${r}</span></button>`;
   $("#lot-kpis").innerHTML = [
-    ...especies.map((e) => kpi(fmtNum(totEsp[e]), e, "esp:" + e, espFiltro.has(e))),
-    kpi(ocupados.length, "Ocupados", "ocupados", f === "ocupados"),
-    kpi(linhas.filter((l) => l.grupo === "vazios").length, "Vazios", "vazios", f === "vazios"),
-    kpi(linhas.filter((l) => l.grupo === "sem").length, "Sem info", "sem", f === "sem"),
+    ...especies.map((e) => kpi(fmtNum(totEsp[e]), e, "esp:" + e)),
+    kpi(ocupados.length, "Ocupados", "ocupados"),
+    kpi(linhas.filter((l) => l.grupo === "vazios").length, "Vazios", "vazios"),
+    kpi(linhas.filter((l) => l.grupo === "sem").length, "Sem info", "sem"),
   ].join("");
+  const espSel = [...topoFiltro].filter((k) => k.startsWith("esp:")).map((k) => k.slice(4));
+  const passaTopo = (l) => !topoFiltro.size || [...topoFiltro].some((k) => (k.startsWith("esp:")
+    ? l.grupo === "ocupados" && (porEspecie(l.lot)[k.slice(4)] || 0) > 0
+    : l.grupo === k));
 
-  // Com espécie marcada, os botões de categoria mostram só as categorias dela
+  // Botões de categoria: só as dos potreiros que passaram em cima. Com espécie marcada (e sem "Ocupados"),
+  // só as categorias das espécies marcadas.
+  const todasCats = !topoFiltro.size || topoFiltro.has("ocupados");
   const porCat = {};
-  ocupados.forEach((l) => l.lot.animais.forEach((a) => {
-    if (espFiltro.size && !espFiltro.has(especieDe(a.categoria))) return;
+  linhas.filter((l) => l.grupo === "ocupados" && passaTopo(l)).forEach((l) => l.lot.animais.forEach((a) => {
+    if (!todasCats && !espSel.includes(especieDe(a.categoria))) return;
     porCat[a.categoria] = (porCat[a.categoria] || 0) + Number(a.qtd);
   }));
   [...catFiltro].forEach((c) => { if (!porCat[c]) catFiltro.delete(c); });
-  const algumFiltro = catFiltro.size || espFiltro.size || f;
   $("#lot-cats").innerHTML = Object.entries(porCat).sort((a, b) => b[1] - a[1])
     .map(([c, n]) => `<button type="button" data-cat="${esc(c)}" aria-pressed="${catFiltro.has(c)}">${esc(c)}: <b>${fmtNum(n)}</b></button>`).join("")
-    + (algumFiltro ? `<button type="button" class="limpar" data-cat-limpar>Limpar filtro</button>` : "");
+    + (catFiltro.size || topoFiltro.size ? `<button type="button" class="limpar" data-cat-limpar>Limpar filtro</button>` : "");
 
+  // Categorias: um ou mais, "OU" entre elas; "E" com os cartões de cima
   const q = $("#lot-q").value;
-  const temCat = (l) => !catFiltro.size || (l.grupo === "ocupados" && l.lot.animais.some((a) => catFiltro.has(a.categoria)));
-  const temEsp = (l) => !espFiltro.size || (l.grupo === "ocupados" && Object.entries(porEspecie(l.lot)).some(([e, n]) => n > 0 && espFiltro.has(e)));
-  const vis = linhas.filter((l) => (!f || l.grupo === f) && combina(l.p, q) && temCat(l) && temEsp(l)).sort((a, b) => porNome(a.p, b.p));
+  const passaCat = (l) => !catFiltro.size || (l.grupo === "ocupados" && l.lot.animais.some((a) => catFiltro.has(a.categoria)));
+  const vis = linhas.filter((l) => passaTopo(l) && passaCat(l) && combina(l.p, q)).sort((a, b) => porNome(a.p, b.p));
   // Tabela compacta: Potreiro | Animais | Última atualização (tocar na linha abre o registro)
   const linha = (l) => {
     const animais = l.grupo === "ocupados"
@@ -2052,25 +2056,20 @@ function ligarEventos() {
     limiteLista = 60;
     renderListas();
   });
-  ["#lot-q", "#lot-f"].forEach((s) => $(s).addEventListener("input", renderLotacao));
+  $("#lot-q").addEventListener("input", renderLotacao);
   $("#lot-cats").addEventListener("click", (e) => {
     const b = e.target.closest("[data-cat], [data-cat-limpar]");
     if (!b) return;
-    if (b.dataset.catLimpar !== undefined) { catFiltro.clear(); espFiltro.clear(); $("#lot-f").value = ""; }
+    if (b.dataset.catLimpar !== undefined) { catFiltro.clear(); topoFiltro.clear(); }
     else if (catFiltro.has(b.dataset.cat)) catFiltro.delete(b.dataset.cat);
     else catFiltro.add(b.dataset.cat);
     renderLotacao();
   });
-  // Cartões: espécie liga/desliga; situação escolhe no seletor (tocar de novo volta para todos)
+  // Cartões: cada um liga/desliga (pode marcar vários)
   $("#lot-kpis").addEventListener("click", (e) => {
     const k = e.target.closest("[data-kpi]")?.dataset.kpi;
     if (!k) return;
-    if (k.startsWith("esp:")) {
-      const esp = k.slice(4);
-      if (espFiltro.has(esp)) espFiltro.delete(esp); else espFiltro.add(esp);
-    } else {
-      $("#lot-f").value = $("#lot-f").value === k ? "" : k;
-    }
+    if (topoFiltro.has(k)) topoFiltro.delete(k); else topoFiltro.add(k);
     renderLotacao();
   });
   $("#lot-lista").addEventListener("click", (e) => { const b = e.target.closest("[data-ir]"); if (b) irParaPotreiro(b.dataset.ir); });
