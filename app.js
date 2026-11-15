@@ -1358,7 +1358,10 @@ function restaurarDif(r) {
   });
 }
 
-const txtMov = (r) => (r.movimentos || []).map((m) => m.tipo === "mudanca"
+// Faltando e retorno ficam na linha "Faltando"; movimentação é o resto (morte, venda, transferência...)
+const movReais = (r) => (r.movimentos || []).filter((m) => m.tipo !== "faltando" && m.tipo !== "retorno");
+const txtVoltaram = (r) => (r.movimentos || []).filter((m) => m.tipo === "retorno").map((m) => `voltaram ${fmtNum(m.qtd)} ${m.categoria}`).join(" · ");
+const txtMov = (r) => movReais(r).map((m) => m.tipo === "mudanca"
   ? `${fmtNum(m.qtd)} ${m.categoria} → ${m.para}`
   : m.tipo === "transferencia" ? `${fmtNum(m.qtd)} ${m.categoria} foram para ${m.outro || "outro potreiro (já atualizado)"}`
   : m.tipo === "veio" ? `${fmtNum(m.qtd)} ${m.categoria} vieram de ${m.outro || "outro potreiro (já atualizado)"}`
@@ -2127,7 +2130,7 @@ function cartao(r) {
     r.minerais?.length ? `<span class="badge min">Mineral</span>` : "",
     r.tem_mineral ? `<span class="badge tem">Tem mineral</span>` : "",
     r.lotacao === "conferida" && r.faltando?.length ? `<span class="badge faltam">Animais faltando</span>` : "",
-    r.movimentos?.length ? `<span class="badge mov">Movimentação</span>` : "",
+    movReais(r).length ? `<span class="badge mov">Movimentação</span>` : "",
     r.medicacao ? `<span class="badge med">Medicamento</span>` : "",
   ].join("");
   const fs = faltasAtivas().filter((f) => f.recorrida_id === r.id);
@@ -2138,8 +2141,11 @@ function cartao(r) {
       <div>
         <div class="reg-pot">${r.potreiro ? esc(r.potreiro) : `<span class="muted-s">Sem potreiro</span>`} ${badges}${fs.length ? `<span class="badge falta">Falta</span>` : ""}</div>
         ${r.lotacao ? `<div class="reg-linha"><i>Animais</i>${esc(txtAnimais(r))}${r.animais?.length > 1 ? ` <b>(${fmtNum(tot)})</b>` : ""}</div>` : ""}
-        ${r.movimentos?.length ? `<div class="reg-linha"><i>Movimentos</i>${esc(txtMov(r))}</div>` : ""}
-        ${r.lotacao === "conferida" && r.faltando?.length ? `<div class="reg-linha"><i>Faltando</i><span class="txt-falta">${esc(txtFaltando(r))}</span></div>` : ""}
+        ${movReais(r).length ? `<div class="reg-linha"><i>Movimentos</i>${esc(txtMov(r))}</div>` : ""}
+        ${(r.lotacao === "conferida" && r.faltando?.length) || txtVoltaram(r) ? `<div class="reg-linha"><i>Faltando</i>${[
+          txtVoltaram(r) ? esc(txtVoltaram(r)[0].toUpperCase() + txtVoltaram(r).slice(1)) : "",
+          r.lotacao === "conferida" && r.faltando?.length ? `<span class="txt-falta">${txtVoltaram(r) ? "ainda faltam " : ""}${esc(txtFaltando(r))}</span>` : "",
+        ].filter(Boolean).join(" · ")}</div>` : ""}
         ${r.minerais?.length ? `<div class="reg-linha"><i>Mineral</i>${esc(txtMinerais(r))}</div>` : ""}
         ${r.medicacao ? `<div class="reg-linha"><i>Medicamentos</i>${esc(txtMed(r.medicacao))}</div>` : ""}
         ${fs.length ? `<div class="reg-linha"><i>Falta no depósito</i>${fs.map((f) => esc(f.mineral) + (f.reposto_em ? " (reposto)" : "")).join(" · ")}</div>` : ""}
@@ -2164,7 +2170,7 @@ const TIPOS_REG = [
   { id: "tem", nome: "Tem mineral", cls: "tem", tem: (r) => !!r.tem_mineral },
   { id: "falta", nome: "Falta de mineral", cls: "falta", tem: (r) => faltasAtivas().some((f) => f.recorrida_id === r.id) },
   { id: "faltam", nome: "Animais faltando", cls: "faltam", tem: (r) => r.lotacao === "conferida" && !!r.faltando?.length },
-  { id: "mov", nome: "Movimentação", cls: "mov", tem: (r) => !!r.movimentos?.length },
+  { id: "mov", nome: "Movimentação", cls: "mov", tem: (r) => movReais(r).length > 0 },
   { id: "med", nome: "Medicamento", cls: "med", tem: (r) => !!r.medicacao },
 ];
 const tipoFiltro = new Set();
