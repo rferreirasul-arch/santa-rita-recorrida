@@ -46,6 +46,12 @@ anterior errada (diferença sem motivo também conta assim). A lotação de refe
 é a contagem + os faltando − os de outro potreiro. Os faltando aparecem na recorrida seguinte do potreiro
 (voltaram, ainda faltam, encontrado morto ou não vão voltar), na aba Lotação (cartão "Com falta") e na
 seção "Animais faltando" do Painel.
+**Transferência entre potreiros**: no quadro de diferença, "Transferência" (saíram) ou "Vieram (transferência)"
+pede o outro potreiro ("Já atualizado no outro potreiro" registra só aqui; em "Vieram" a lista mostra os
+potreiros que têm a categoria). Ao salvar, o app mostra como fica a lotação dele (números editáveis) e, se confirmado,
+cria uma recorrida só de lotação lá, com a observação "Lotação atualizada pela recorrida de ...". Editar a
+recorrida refaz essa atualização; se o outro potreiro já registrou a mesma troca, a opção vem desmarcada; excluir também a desfaz. "Vazio" também abre o quadro, para dizer para onde
+foram os animais.
 **Medicação sem potreiro**: com Medicamentos ligado e sem potreiro escolhido, ao salvar o app pergunta se lança
 só a medicação. Se sim, grava um registro com o potreiro em branco (aparece como "Sem potreiro"): os animais
 conferidos ficam só na medicação e não mudam a lotação; mineral, tem mineral e falta no depósito não são salvos.

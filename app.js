@@ -998,15 +998,18 @@ function preencherPeloHistorico(lot, min) {
 // Lotação de referência = contados + faltando (ainda e novos) - animais de outro potreiro.
 // =====================================================================
 const TIPOS_MOV = {
-  faltando: "Faltando (vão voltar)", morte: "Morte", venda: "Venda/saída", mudanca: "Mudou de categoria",
-  nascimento: "Nascimento", entrada: "Entrada (compra)", visitante: "São de outro potreiro", ajuste: "Contagem anterior errada",
+  faltando: "Faltando (vão voltar)", morte: "Morte", venda: "Venda/saída", transferencia: "Transferência", mudanca: "Mudou de categoria",
+  nascimento: "Nascimento", entrada: "Entrada (compra)", veio: "Vieram (transferência)", visitante: "São de outro potreiro (vão voltar)", ajuste: "Contagem anterior errada",
 };
-const TIPOS_MENOS = ["faltando", "morte", "venda", "mudanca", "ajuste"];
-const TIPOS_MAIS = ["nascimento", "entrada", "visitante", "ajuste"];
+const TIPOS_MENOS = ["faltando", "morte", "venda", "transferencia", "mudanca", "ajuste"];
+const TIPOS_MAIS = ["nascimento", "entrada", "veio", "visitante", "ajuste"];
+// Movimentos que levam ou trazem animais de outro potreiro
+const TROCA_POT = { transferencia: "veio", veio: "transferencia" };
 // Desfecho dos animais que estavam faltando
 const TIPOS_FALT = { voltaram: "Voltaram", ainda: "Ainda faltam", morto: "Encontrei morto", perda: "Não vão voltar (perda)" };
 const NOME_MOV = { faltando: "Faltando", retorno: "Retorno de faltando", perda: "Perda (não voltou)", morte: "Morte", venda: "Venda/saída", mudanca: "Mudança de categoria",
-  nascimento: "Nascimento", entrada: "Entrada", visitante: "De outro potreiro", ajuste: "Ajuste de contagem" };
+  nascimento: "Nascimento", entrada: "Entrada", visitante: "De outro potreiro", ajuste: "Ajuste de contagem",
+  transferencia: "Transferência", veio: "Vieram" };
 // Categorias de cria: aumento nelas já vem sugerido como nascimento
 const ehCria = (cat) => /^(tern|bezerr|cordeir|potr|cabrit)/.test(norm(cat));
 
@@ -1050,11 +1053,11 @@ function contadosAtuais() {
 }
 
 function calcDif() {
-  if (!blocoLigado("animais") || vazio) return null;
+  if (!blocoLigado("animais")) return null;
   const ant = anteriorLotacao();
   if (!ant || ant.lotacao !== "conferida" || !ant.animais?.length) return null;
   const A = somaCats(ant.animais);
-  const C = contadosAtuais();
+  const C = vazio ? {} : contadosAtuais();
   const cats = [...new Set([...Object.keys(A), ...Object.keys(C)])];
   const D = {};
   cats.forEach((c) => { D[c] = (C[c] || 0) - (A[c] || 0); });
@@ -1101,10 +1104,15 @@ function calcDif() {
   const menos = ordem(cats.filter((c) => E[c] < 0));
   const mais = ordem(cats.filter((c) => E[c] > 0));
 
-  // Escolhas da pessoa valem enquanto a diferença daquela categoria não muda (chave com sinal)
+  // Escolhas da pessoa: se a diferença muda de tamanho, com uma linha só ela acompanha o novo valor;
+  // com várias, ficam como estão (o quadro avisa o que sobra ou passa). Se muda de sinal, recomeça.
   const linhasDe = (c, chave, padrao) => {
     const st = difEstado[c];
-    if (st && (st.e === chave || st.e === undefined)) { st.e = chave; return st.linhas; }
+    if (st && (st.e === undefined || Math.sign(st.e) === Math.sign(chave))) {
+      if (st.e !== undefined && st.e !== chave && st.linhas.length === 1) st.linhas[0].qtd = Math.abs(chave);
+      st.e = chave;
+      return st.linhas;
+    }
     delete difEstado[c];
     return padrao();
   };
@@ -1170,6 +1178,11 @@ function calcDif() {
       soma += q;
       const mv = { tipo: l.tipo, categoria: k.c, qtd: q };
       if (l.tipo === "mudanca") { if (!l.para) erro ||= { c: k.c, msg: `Escolha para qual categoria mudaram os ${k.c}.` }; mv.para = l.para; }
+      if (TROCA_POT[l.tipo]) {
+        if (!l.outro) erro ||= { c: k.c, msg: `Escolha ${l.tipo === "veio" ? "de qual potreiro vieram" : "para qual potreiro foram"} os ${k.c} (ou "Já atualizado no outro potreiro").` };
+        if (l.outro === "*") mv.ja = true; // o outro potreiro já foi atualizado: só registra aqui
+        else mv.outro = l.outro;
+      }
       if (l.tipo === "morte") { if (l.brinco) mv.brinco = l.brinco; if (l.causa) mv.causa = l.causa; }
       if (l.tipo === "faltando") { ref[k.c] += q; faltando.push({ categoria: k.c, qtd: q, desde: data }); }
       if (l.tipo === "visitante") ref[k.c] -= q;
@@ -1209,6 +1222,7 @@ function renderDif() {
         <select class="dif-tipo">${opcoes(k, l)}</select>
         ${k.linhas.length > 1 ? `<button type="button" class="btn-x" data-dif-rem aria-label="Remover">×</button>` : ""}
       </div>
+      ${TROCA_POT[l.tipo] ? `<label class="dif-extra">${l.tipo === "veio" ? "Vieram de" : "Foram para"} ${selectPotreiro(k.c, l)}</label>` : ""}
       ${l.tipo === "mudanca" ? `<label class="dif-extra">Passaram para <select class="dif-para"><option value="">escolha</option>${destinos.map((c) => `<option ${l.para === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>` : ""}
       ${l.tipo === "morte" ? `<div class="dif-extra dif-morte">
         <input type="text" class="dif-brinco" placeholder="Brinco (opcional)" value="${esc(l.brinco || "")}" autocomplete="off">
@@ -1273,6 +1287,8 @@ function guardarCard(cardEl) {
       qtd: m.querySelector(".dif-qtd").value.trim(),
       tipo: m.querySelector(".dif-tipo").value,
       para: m.querySelector(".dif-para")?.value || "",
+      outro: (m.querySelector(".dif-outro")?.value || "").replace("+todos", ""),
+      todos: m.querySelector(".dif-outro")?.value === "+todos" || m.querySelector(".dif-outro")?.dataset.todos === "1",
       brinco: m.querySelector(".dif-brinco")?.value.trim().toUpperCase() || "",
       causa: m.querySelector(".dif-causa")?.value.trim() || "",
     })),
@@ -1292,14 +1308,20 @@ function ligarEventosDif() {
   box.addEventListener("change", (e) => {
     const cardEl = e.target.closest(".dif-cat, .dif-falt");
     if (cardEl) guardarCard(cardEl);
-    if (e.target.matches(".dif-qtd, .dif-tipo, .dif-para")) renderDif();
+    if (e.target.matches(".dif-qtd, .dif-tipo, .dif-para, .dif-outro")) renderDif();
   });
   box.addEventListener("click", (e) => {
     const cardEl = e.target.closest(".dif-cat, .dif-falt");
     if (!cardEl) return;
     if (e.target.closest("[data-dif-add]")) {
       const st = guardarCard(cardEl);
-      st.linhas.push({ qtd: "", tipo: cardEl.classList.contains("dif-falt") ? "ainda" : "" });
+      // A linha nova já vem com o que ainda não foi explicado
+      const falt = cardEl.classList.contains("dif-falt");
+      const total = falt ? difAtual?.entradas.find((f) => f.key === cardEl.dataset.key)?.qtd
+        : difAtual?.cards.find((k) => k.c === cardEl.dataset.cat)?.alvo;
+      const usado = st.linhas.reduce((t, l) => t + (Math.floor(numero(l.qtd) || 0)), 0);
+      const resto = Math.max(0, (total || 0) - usado);
+      st.linhas.push({ qtd: resto || "", tipo: falt ? "ainda" : "" });
       renderDif();
       return;
     }
@@ -1324,7 +1346,7 @@ function restaurarDif(r) {
         .push({ qtd: m.qtd, tipo: desfecho[m.tipo], brinco: m.brinco || "", causa: m.causa || "" });
       return;
     }
-    (difEstado[m.categoria] ||= { e: undefined, linhas: [] }).linhas.push({ qtd: m.qtd, tipo: m.tipo, para: m.para || "", brinco: m.brinco || "", causa: m.causa || "" });
+    (difEstado[m.categoria] ||= { e: undefined, linhas: [] }).linhas.push({ qtd: m.qtd, tipo: m.tipo, para: m.para || "", outro: m.ja ? "*" : m.outro || "", todos: true, brinco: m.brinco || "", causa: m.causa || "" });
   });
   // Faltando que continuaram: completa com "Ainda faltam"
   const ant = anteriorLotacao();
@@ -1338,6 +1360,8 @@ function restaurarDif(r) {
 
 const txtMov = (r) => (r.movimentos || []).map((m) => m.tipo === "mudanca"
   ? `${fmtNum(m.qtd)} ${m.categoria} → ${m.para}`
+  : m.tipo === "transferencia" ? `${fmtNum(m.qtd)} ${m.categoria} foram para ${m.outro || "outro potreiro (já atualizado)"}`
+  : m.tipo === "veio" ? `${fmtNum(m.qtd)} ${m.categoria} vieram de ${m.outro || "outro potreiro (já atualizado)"}`
   : `${NOME_MOV[m.tipo] || m.tipo}: ${fmtNum(m.qtd)} ${m.categoria}${m.brinco ? ` (brinco ${m.brinco})` : ""}${m.causa ? ` (${m.causa})` : ""}`).join(" · ");
 const txtFaltando = (lot) => (lot?.faltando || []).filter((f) => f.qtd > 0)
   .map((f) => `${fmtNum(f.qtd)} ${f.categoria} (desde ${fmtData(f.desde)}, ${haDias(f.desde)})`).join(" · ");
@@ -1827,11 +1851,132 @@ function editar(id) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+// =====================================================================
+// Transferência entre potreiros: prévia da lotação do outro potreiro e registro automático
+// =====================================================================
+const outrosPotreiros = () => catalogo.potreiros.filter((p) => p.ativo !== false && !mesmoNome(p.nome, potSel))
+  .map((p) => p.nome).sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+// Lista de potreiros do quadro. Em cima, "Já atualizado no outro potreiro" (não mexe no outro).
+// Em "Vieram", só os que têm a categoria na lotação (com a quantidade), com a opção de ver todos.
+function selectPotreiro(cat, l) {
+  const sel = (v) => (mesmoNome(l.outro, v) ? "selected" : "");
+  let ops = `<option value="">escolha o potreiro</option><option value="*" ${l.outro === "*" ? "selected" : ""}>Já atualizado no outro potreiro</option>`;
+  let todos = l.tipo !== "veio" || l.todos;
+  if (!todos) {
+    const est = estadoPotreiros();
+    const com = outrosPotreiros().map((n) => {
+      const lot = est.get(norm(n))?.lotacao;
+      return { n, q: lot?.lotacao === "conferida" ? somaCats(lot.animais)[cat] || 0 : 0 };
+    }).filter((x) => x.q > 0);
+    if (!com.length) todos = true;
+    else {
+      ops += `<optgroup label="Com ${esc(cat)} na lotação">${com.map((x) => `<option value="${esc(x.n)}" ${sel(x.n)}>${esc(x.n)} (${fmtNum(x.q)})</option>`).join("")}</optgroup>`;
+      if (l.outro && l.outro !== "*" && !com.some((x) => mesmoNome(x.n, l.outro))) ops += `<option value="${esc(l.outro)}" selected>${esc(l.outro)}</option>`;
+      ops += `<option value="+todos">Mostrar todos os potreiros…</option>`;
+    }
+  }
+  if (todos) ops += outrosPotreiros().map((n) => `<option value="${esc(n)}" ${sel(n)}>${esc(n)}</option>`).join("");
+  return `<select class="dif-outro" data-todos="${todos && l.tipo === "veio" ? 1 : 0}">${ops}</select>`;
+}
+
+// Lotação em vigor no potreiro na data (sem os registros que esta recorrida já tinha criado)
+function lotacaoEm(nome, data, excluir) {
+  return ativos().filter((r) => r.lotacao && mesmoNome(r.potreiro, nome) && !excluir.has(r.id) && r.data <= data).sort(ordenar)[0] || null;
+}
+
+// Agrupa as transferências por potreiro: [{ pot, sinal: +1 recebe / -1 cede, itens: [{ categoria, qtd }] }]
+function transferenciasPorPotreiro(movimentos) {
+  const grupos = new Map();
+  movimentos.filter((m) => TROCA_POT[m.tipo] && m.outro).forEach((m) => {
+    const k = norm(m.outro);
+    if (!grupos.has(k)) grupos.set(k, { pot: m.outro, itens: [] });
+    grupos.get(k).itens.push({ categoria: m.categoria, qtd: m.qtd, sinal: m.tipo === "transferencia" ? 1 : -1 });
+  });
+  return [...grupos.values()];
+}
+
+// Janela com a prévia de cada potreiro: números editáveis e a escolha de atualizar ou não.
+// Resolve com [{ pot, aplicar, animais, base }] ou null (voltou para a recorrida).
+function perguntarTransferencias(grupos, data, excluir) {
+  const prev = grupos.map((g) => {
+    const base = lotacaoEm(g.pot, data, excluir);
+    const atual = base?.lotacao === "conferida" ? somaCats(base.animais) : {};
+    const delta = {};
+    g.itens.forEach((i) => { delta[i.categoria] = (delta[i.categoria] || 0) + i.sinal * i.qtd; });
+    const cats = [...new Set([...Object.keys(atual), ...Object.keys(delta)])];
+    // O outro potreiro já registrou essa troca com este? Então já vem desmarcado, para não duplicar
+    const ja = (base?.movimentos || []).filter((m) => mesmoNome(m.outro, potSel) && g.itens.some((i) => i.categoria === m.categoria
+      && m.tipo === (i.sinal > 0 ? "veio" : "transferencia")));
+    return { ...g, base, ja, linhas: cats.map((c) => ({ c, antes: atual[c] || 0, mov: delta[c] || 0, depois: Math.max(0, (atual[c] || 0) + (delta[c] || 0)) })) };
+  });
+  const corpo = prev.map((g, gi) => {
+    const recebe = g.itens.some((i) => i.sinal > 0);
+    const situacao = !g.base ? "Sem lotação registrada."
+      : g.base.lotacao === "vazio" ? `Vazio em ${fmtData(g.base.data)}.`
+      : `Lotação de ${fmtData(g.base.data)} (${haDias(g.base.data)}).`;
+    return `<div class="tr-pot" data-g="${gi}">
+      <h3>${esc(g.pot)}</h3>
+      <p class="muted-s">${situacao}</p>
+      <table class="tr-tab"><thead><tr><th>Categoria</th><th>Antes</th><th></th><th>Fica</th></tr></thead><tbody>
+      ${g.linhas.map((l, li) => `<tr><td>${esc(l.c)}</td><td>${fmtNum(l.antes)}</td>
+        <td class="${l.mov > 0 ? "tr-mais" : l.mov < 0 ? "tr-menos" : ""}">${l.mov ? (l.mov > 0 ? "+" : "−") + fmtNum(Math.abs(l.mov)) : ""}</td>
+        <td><input type="text" inputmode="numeric" class="tr-qtd" data-l="${li}" value="${l.depois}" aria-label="${esc(l.c)} em ${esc(g.pot)}"></td></tr>`).join("")}
+      </tbody></table>
+      ${g.linhas.filter((l) => l.mov < 0 && l.antes < -l.mov).map((l) => `<p class="tr-aviso">${esc(g.pot)} tinha ${fmtNum(l.antes)} ${esc(l.c)} na lotação: confira se é este o potreiro.</p>`).join("")}
+      ${g.ja.length ? `<p class="tr-aviso">${esc(g.pot)} já registrou em ${fmtData(g.base.data)}: ${g.ja.map((m) => `${fmtNum(m.qtd)} ${esc(m.categoria)}`).join(", ")} ${recebe ? "vindos de" : "enviados para"} ${esc(potSel)}. Desmarcado para não duplicar.</p>` : ""}
+      <label class="tr-aplicar"><input type="checkbox" class="tr-ok" ${g.ja.length ? "" : "checked"}> ${recebe ? "Somar" : "Descontar"} esses animais na lotação de ${esc(g.pot)}</label>
+    </div>`;
+  }).join("");
+  $("#tr-corpo").innerHTML = corpo;
+  const dlg = $("#dlg-transf");
+  dlg.returnValue = "";
+  dlg.showModal();
+  return new Promise((ok) => dlg.addEventListener("close", () => {
+    if (dlg.returnValue !== "sim") { ok(null); return; }
+    ok(prev.map((g, gi) => {
+      const el = $(`.tr-pot[data-g="${gi}"]`);
+      const animais = g.linhas.map((l, li) => ({ categoria: l.c, qtd: Math.max(0, Math.floor(numero($(`.tr-qtd[data-l="${li}"]`, el).value) || 0)) }))
+        .filter((a) => a.qtd > 0);
+      return { pot: g.pot, itens: g.itens, aplicar: $(".tr-ok", el).checked, animais, base: g.base };
+    }));
+  }, { once: true }));
+}
+
+// Recorrida criada no outro potreiro (só lotação), ligada à recorrida que a gerou
+function recorridaDaTransferencia(rec, t, id, agora) {
+  const recebe = t.itens.some((i) => i.sinal > 0);
+  const vazioDepois = !t.animais.length;
+  // Animais que estavam faltando lá continuam faltando (se a categoria continua na lotação)
+  const faltando = vazioDepois ? [] : (t.base?.lotacao === "conferida" ? t.base.faltando || [] : [])
+    .filter((f) => t.animais.some((a) => a.categoria === f.categoria && a.qtd >= f.qtd));
+  return {
+    id, data: rec.data, potreiro: t.pot,
+    lotacao: vazioDepois ? "vazio" : "conferida",
+    animais: t.animais, contados: null, faltando,
+    movimentos: t.itens.map((i) => ({ tipo: i.sinal > 0 ? "veio" : "transferencia", categoria: i.categoria, qtd: i.qtd, outro: rec.potreiro })),
+    minerais: [], tem_mineral: false, medicacao: null,
+    obs: `Lotação atualizada pela recorrida de ${rec.potreiro}: animais ${recebe ? "vindos de lá" : "levados para lá"}.`,
+    origem: { potreiro: rec.potreiro, recorrida_id: rec.id },
+    registrado_por: rec.registrado_por, criado_em: agora, atualizado_em: agora, excluido: false, _pendente: true,
+  };
+}
+
+async function excluirGerados(ids, agora) {
+  for (const id of ids || []) {
+    const g = registros.find((x) => x.id === id);
+    if (g && !g.excluido) { Object.assign(g, { excluido: true, atualizado_em: agora, _pendente: true }); await db.gravar(g); }
+  }
+}
+
 async function excluir(id) {
   const r = registros.find((x) => x.id === id);
-  if (!r || !confirm(`Excluir o registro de ${nomePot(r)} (${fmtData(r.data)})?`)) return;
+  const gerados = (r?.gerados || []).map((g) => registros.find((x) => x.id === g && !x.excluido)).filter(Boolean);
+  const extra = gerados.length ? `\n\nTambém será desfeita a atualização de lotação feita em ${gerados.map((g) => g.potreiro).join(", ")}.` : "";
+  if (!r || !confirm(`Excluir o registro de ${nomePot(r)} (${fmtData(r.data)})?${extra}`)) return;
   Object.assign(r, { excluido: true, atualizado_em: new Date().toISOString(), _pendente: true });
   await db.gravar(r);
+  await excluirGerados(r.gerados, r.atualizado_em);
   await gravarFaltasDaRecorrida(r, new Set(), r.atualizado_em);
   if (editId === id) limparForm();
   renderTudo();
@@ -1880,14 +2025,20 @@ async function salvar(ev) {
   // Diferença com a lotação anterior: movimentações e lotação de referência
   const contados = animais;
   let movimentos = [], faltandoRec = [];
-  if (comAnimais && !vazio && !semPot) {
+  let lotacao = comAnimais ? (vazio ? "vazio" : "conferida") : "";
+  if (comAnimais && !semPot) {
     renderDif();
     const d = difAtual;
     if (d?.erro) {
       $("#dif-animais .erro")?.scrollIntoView({ block: "center", behavior: "smooth" });
       return falha(d.erro.msg);
     }
-    if (d) { movimentos = d.movimentos; faltandoRec = d.faltando; animais = d.ref; }
+    if (d) {
+      movimentos = d.movimentos;
+      faltandoRec = d.faltando;
+      animais = d.ref;
+      lotacao = animais.length ? "conferida" : "vazio";
+    }
   }
   let minerais = [];
   if (comMineral) {
@@ -1919,14 +2070,25 @@ async function salvar(ev) {
 
   const agora = new Date().toISOString();
   const antigo = editId ? registros.find((r) => r.id === editId) : null;
+
+  // Transferências: prévia da lotação dos outros potreiros e confirmação
+  let transf = [];
+  const grupos = semPot ? [] : transferenciasPorPotreiro(movimentos);
+  if (grupos.length) {
+    transf = await perguntarTransferencias(grupos, campo("data").value, new Set([...(antigo?.gerados || []), editId].filter(Boolean)));
+    if (!transf) return; // voltou para a recorrida
+  }
+  const gerar = transf.filter((t) => t.aplicar).map((t) => ({ t, id: novoId() }));
+
   const rec = {
     ...(antigo || {}),
     id: editId || novoId(),
     data: campo("data").value,
     potreiro: semPot ? "" : potSel,
-    lotacao: semPot ? "" : comAnimais ? (vazio ? "vazio" : "conferida") : "",
+    lotacao: semPot ? "" : lotacao,
     animais: semPot ? [] : animais,
-    contados: !semPot && (movimentos.length || faltandoRec.length) ? contados : null,
+    contados: !semPot && lotacao === "conferida" && (movimentos.length || faltandoRec.length) ? contados : null,
+    gerados: gerar.map((g) => g.id),
     movimentos: semPot ? [] : movimentos,
     faltando: semPot ? [] : faltandoRec,
     minerais,
@@ -1940,10 +2102,14 @@ async function salvar(ev) {
     _pendente: true,
   };
   await db.gravar(rec);
+  // Refaz as atualizações de lotação feitas antes por esta recorrida (na edição) e cria as novas
+  await excluirGerados(antigo?.gerados, agora);
+  for (const g of gerar) await db.gravar(recorridaDaTransferencia(rec, g.t, g.id, agora));
   await gravarFaltasDaRecorrida(rec, comFalta ? faltaSel : new Set(), agora);
   if (comFalta) await gravarRepostosDaRecorrida(rec, repostos, agora);
   registros = await db.todos();
-  toast(antigo ? "Alterações salvas." : semPot ? "Medicação registrada (sem potreiro)." : `Recorrida de ${rec.potreiro} registrada.`);
+  toast((antigo ? "Alterações salvas." : semPot ? "Medicação registrada (sem potreiro)." : `Recorrida de ${rec.potreiro} registrada.`)
+    + (gerar.length ? ` Lotação atualizada em ${gerar.map((g) => g.t.pot).join(", ")}.` : ""), 4500);
   limparForm();
   renderTudo();
   window.scrollTo({ top: 0, behavior: "smooth" });

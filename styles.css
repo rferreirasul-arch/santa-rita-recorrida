@@ -556,3 +556,18 @@ body.digitando .tabbar { display: none; }
 #lot-kpis button.kpi-falta[aria-pressed="true"] { background: var(--aviso); border-color: var(--aviso); }
 #lot-kpis button.kpi-falta[aria-pressed="true"] b { color: #fff; }
 .dif-falt.erro { border-color: var(--perda); box-shadow: 0 0 0 2px var(--perda-bg); }
+/* Janela de transferência entre potreiros */
+.tr-pot { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; background: #fbf8f3; }
+.tr-pot h3 { font-size: 1.05rem; }
+.tr-pot .muted-s { display: block; margin: 2px 0 6px; }
+.tr-tab { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.tr-tab th { text-align: left; font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; padding: 4px 4px; }
+.tr-tab td { padding: 4px; border-top: 1px solid var(--line); }
+.tr-tab td:nth-child(2), .tr-tab td:nth-child(3) { text-align: right; width: 52px; font-variant-numeric: tabular-nums; }
+.tr-tab td:last-child { width: 76px; }
+.tr-qtd { min-height: 38px; padding: 6px; text-align: center; font-weight: 700; }
+.tr-mais { color: var(--ok); font-weight: 700; }
+.tr-menos { color: var(--perda); font-weight: 700; }
+.tr-aplicar { display: flex; gap: 8px; align-items: center; margin-top: 10px; font-size: .92rem; font-weight: 600; }
+.tr-aplicar input { width: 20px; min-height: 20px; height: 20px; flex: none; }
+.tr-aviso { margin: 8px 0 0; font-size: .86rem; color: var(--aviso); background: var(--aviso-bg); border-radius: 8px; padding: 6px 8px; }

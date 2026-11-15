@@ -28,10 +28,11 @@ const APLICADO_EM = { lote: "Todo o lote", animais: "Animal específico" };
 
 // Movimentações: explicam a diferença entre a contagem e a lotação anterior (uma linha por evento).
 // As linhas de uma recorrida são refeitas a cada alteração dela.
-const CABECALHO_MOVIMENTACOES = ["Data", "Potreiro", "Tipo", "Categoria", "Quantidade", "Nova categoria", "Brinco", "Causa provável", "Faltando desde", "Registrado por", "ID da recorrida"];
+const CABECALHO_MOVIMENTACOES = ["Data", "Potreiro", "Tipo", "Categoria", "Quantidade", "Nova categoria", "Outro potreiro", "Brinco", "Causa provável", "Faltando desde", "Registrado por", "ID da recorrida"];
 const TIPO_MOVIMENTO = {
   faltando: "Faltando", retorno: "Retorno de faltando", perda: "Perda (não voltou)", morte: "Morte", venda: "Venda/saída", mudanca: "Mudança de categoria",
   nascimento: "Nascimento", entrada: "Entrada (compra)", visitante: "Animais de outro potreiro", ajuste: "Ajuste de contagem",
+  transferencia: "Transferência para outro potreiro", veio: "Vieram de outro potreiro",
 };
 
 // Aba Faltas: uma linha por mineral em falta no depósito de um potreiro
@@ -520,6 +521,8 @@ function lerRegistros_(sh, cab) {
         if (mv.contados) r.contados = mv.contados;
         if (mv.movimentos) r.movimentos = mv.movimentos;
         if (mv.faltando) r.faltando = mv.faltando;
+        if (mv.gerados) r.gerados = mv.gerados;
+        if (mv.origem) r.origem = mv.origem;
       } catch (e) { /* coluna corrompida: ignora */ }
     }
     for (let i = CABECALHO.length; i < cab.length; i++) {
@@ -577,6 +580,8 @@ function paraLinha_(r, cab, kgSaco) {
       if (r.lotacao === "conferida" && r.contados && r.contados.length) mv.contados = r.contados;
       if (r.movimentos && r.movimentos.length) mv.movimentos = r.movimentos;
       if (r.lotacao === "conferida" && r.faltando && r.faltando.length) mv.faltando = r.faltando;
+      if (r.gerados && r.gerados.length) mv.gerados = r.gerados; // lotações atualizadas em outros potreiros
+      if (r.origem) mv.origem = r.origem;                         // criada pela recorrida de outro potreiro
       return Object.keys(mv).length ? JSON.stringify(mv) : "";
     }
     return "";
@@ -658,8 +663,8 @@ function abaMovimentacoes_() {
     sh.getRange(1, 1, 1, nCol).setValues([CABECALHO_MOVIMENTACOES]).setFontWeight("bold").setBackground("#6b4a2f").setFontColor("#ffffff");
     const n = Math.max(sh.getMaxRows() - 1, 1);
     sh.getRange(2, 1, n, 1).setNumberFormat("dd/mm/yyyy");
-    sh.getRange(2, 7, n, 1).setNumberFormat("@");
-    sh.getRange(2, 9, n, 1).setNumberFormat("dd/mm/yyyy");
+    sh.getRange(2, 8, n, 1).setNumberFormat("@");
+    sh.getRange(2, 10, n, 1).setNumberFormat("dd/mm/yyyy");
     sh.getRange(2, nCol, n, 1).setNumberFormat("@");
     sh.showColumns(1, Math.max(nCol, sh.getMaxColumns()));
     sh.hideColumns(nCol, 1);
@@ -672,7 +677,7 @@ function linhasMovimentacao_(r) {
   if (r.excluido || !r.movimentos || !r.movimentos.length) return [];
   const data = (iso) => { const p = String(iso || "").split("-"); return p.length === 3 ? new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])) : ""; };
   return r.movimentos.map((m) => [
-    data(r.data), r.potreiro, TIPO_MOVIMENTO[m.tipo] || m.tipo, m.categoria, Number(m.qtd) || "", m.para || "",
+    data(r.data), r.potreiro, TIPO_MOVIMENTO[m.tipo] || m.tipo, m.categoria, Number(m.qtd) || "", m.para || "", m.outro || (m.ja ? "(já atualizado)" : ""),
     m.brinco || "", m.causa || "", m.desde ? data(m.desde) : m.tipo === "faltando" ? data(r.data) : "", r.registrado_por || "", r.id,
   ]);
 }
