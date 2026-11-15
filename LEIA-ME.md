@@ -39,6 +39,13 @@ criadas sozinhas conforme aparecem. Isso facilita tabela dinâmica. Lotação: `
 dá para digitar outro ou mais de um separado por vírgula). O Tipo alimenta a sanidade do Painel.
 **Medicações**: montada pelo servidor a partir das recorridas (não editar). Uma linha por medicamento, com as
 categorias que receberam, a quantidade de animais, a dose por animal e o **total aplicado** (dose × animais).
+**Movimentações**: montada pelo servidor (não editar). Ao conferir os animais, o app compara a contagem com a
+lotação anterior e, quando há diferença, pergunta o motivo por categoria: faltando, morte (brinco e causa
+opcionais), venda/saída, mudança de categoria, nascimento, entrada, animais de outro potreiro ou contagem
+anterior errada (diferença sem motivo também conta assim). A lotação de referência (colunas "Animais: ...")
+é a contagem + os faltando − os de outro potreiro. Os faltando aparecem na recorrida seguinte do potreiro
+(voltaram, ainda faltam, encontrado morto ou não vão voltar), na aba Lotação (cartão "Com falta") e na
+seção "Animais faltando" do Painel.
 **Medicação sem potreiro**: com Medicamentos ligado e sem potreiro escolhido, ao salvar o app pergunta se lança
 só a medicação. Se sim, grava um registro com o potreiro em branco (aparece como "Sem potreiro"): os animais
 conferidos ficam só na medicação e não mudam a lotação; mineral, tem mineral e falta no depósito não são salvos.

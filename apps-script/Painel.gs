@@ -143,6 +143,13 @@ function dadosPainel_(nDias) {
     .sort((a, b) => String(a.mineral).localeCompare(String(b.mineral)) || String(a.data).localeCompare(String(b.data)))
     .map((f) => [f.mineral, f.potreiro, isoParaData_(f.data), diasEntre_(f.data, hoje)]);
 
+  // Animais faltando: os da última lotação de cada potreiro (contam na lotação, mas não estavam lá)
+  const faltando = [];
+  estados.forEach((e) => (e.lotacao && e.lotacao.lotacao === "conferida" ? e.lotacao.faltando || [] : []).forEach((f) => {
+    if (Number(f.qtd) > 0) faltando.push([e.nome, f.categoria, Number(f.qtd), isoParaData_(f.desde), diasEntre_(f.desde, hoje)]);
+  }));
+  faltando.sort((a, b) => b[4] - a[4] || String(a[0]).localeCompare(String(b[0]), "pt-BR"));
+
   // Medicamentos no período: cada item vira (qtd de animais, dose)
   const aplic = (r) => {
     const med = r.medicacao;
@@ -193,7 +200,7 @@ function dadosPainel_(nDias) {
       .concat([["Recorridas", base.length, "no período"], ["Sacos de mineral", sacos, "no período"], ["Kg de mineral", kg, "no período"]]),
     categorias: Object.keys(porCat).map((c) => [c, porCat[c]]).sort((a, b) => b[1] - a[1]),
     minerais: Object.keys(porMin).map((m) => [m, porMin[m]]).sort((a, b) => b[1] - a[1]),
-    consumo: consumo, semMin: semMin, faltas: faltas, medicamentos: medicamentos, sanidade: sanidade,
+    consumo: consumo, semMin: semMin, faltas: faltas, faltando: faltando, medicamentos: medicamentos, sanidade: sanidade,
   };
 }
 
@@ -256,6 +263,9 @@ function atualizarPainel() {
     { formatos: ["@", "#,##0", "dd/mm/yyyy", "0"], grafico: { colunas: [1, 4], titulo: "Dias desde o último abastecimento" }, alertaCol: 4, alertaAcima: DIAS_SEM_MINERAL_PAINEL });
   sec("Mineral em falta no depósito", ["Mineral", "Potreiro", "Desde", "Dias"], d.faltas,
     { formatos: ["@", "@", "dd/mm/yyyy", "0"], vazio: "Nenhum mineral em falta." });
+  sec("Animais faltando", ["Potreiro", "Categoria", "Animais", "Faltando desde", "Dias"], d.faltando,
+    { formatos: ["@", "@", "#,##0", "dd/mm/yyyy", "0"], vazio: "Nenhum animal faltando.",
+      nota: "Animais que não estavam no potreiro na última recorrida, mas continuam na lotação dele até voltarem." });
   sec("Medicamentos no período", ["Medicamento", "Tipo", "Aplicações", "Animais", "Total aplicado", "Unidade"], d.medicamentos,
     { formatos: ["@", "@", "0", "#,##0", "General", "@"], grafico: { colunas: [1, 4], titulo: "Animais medicados no período" },
       nota: "Tipo vem da aba Medicamentos. Total = dose × animais; \"parcial\" quando faltou a quantidade de animais em alguma aplicação." });

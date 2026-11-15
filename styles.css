@@ -445,6 +445,15 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .t-pot { font-weight: 700; overflow-wrap: anywhere; }
 .t-ani b { font-variant-numeric: tabular-nums; }
 .t-tot { display: flex; justify-content: space-between; gap: 8px; }
+.t-esp { min-width: 0; }
+.t-esp b, .t-esp small { white-space: nowrap; }
+.t-esp + .t-esp { text-align: right; }
+/* Celular: uma espécie embaixo da outra */
+@media (max-width: 560px) {
+  .t-tot { flex-direction: column; gap: 6px; }
+  .t-esp + .t-esp { text-align: left; }
+  .t-zero { display: none; } /* "0 bov." só ocupa espaço quando empilhado */
+}
 .t-ani small, .t-data small { display: block; color: var(--muted); font-size: .8rem; line-height: 1.3; }
 .t-data { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .t-data small.velho { color: var(--aviso); font-weight: 700; }
@@ -510,3 +519,40 @@ body.digitando .tabbar { display: none; }
   opacity: 0; pointer-events: none; transition: .25s; max-width: calc(100% - 32px); text-align: center; z-index: 40;
 }
 .toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* ===== Diferença entre a contagem e a lotação anterior ===== */
+.dif { margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: #fbf8f3; }
+.dif-sec { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; color: var(--muted); margin: 2px 0 8px; }
+.dif-sec ~ .dif-sec { margin-top: 14px; }
+.dif-cat, .dif-falt { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 8px; }
+.dif-cat.erro { border-color: var(--perda); box-shadow: 0 0 0 2px var(--perda-bg); }
+.dif-tit { margin-bottom: 8px; }
+.dif-tit small { color: var(--muted); }
+.dif-tit .dif-menos { color: var(--perda); font-weight: 700; }
+.dif-tit .dif-mais { color: var(--ok); font-weight: 700; }
+.dif-mov + .dif-mov { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.dif-mov-l { display: grid; grid-template-columns: 56px 1fr auto; gap: 8px; align-items: center; }
+.dif-mov-l .btn-x { grid-column: 3; }
+.dif-qtd { text-align: center; font-weight: 700; padding: 10px 4px; }
+.dif-tipo { min-width: 0; font-size: .95rem; padding-left: 10px; }
+.dif-extra { display: block; margin-top: 8px; font-size: .9rem; color: var(--muted); }
+.dif-extra select, .dif-extra input { margin-top: 4px; }
+.dif-morte { display: grid; gap: 6px; }
+.dif-veio, .dif-resto { display: block; color: var(--muted); font-size: .85rem; margin: -2px 0 8px; }
+.dif-resto { margin: 8px 0 0; }
+.dif-add { margin-top: 8px; font-size: .9rem; }
+.dif-seg { grid-template-columns: 1fr 1fr 1fr; margin-bottom: 0; }
+.dif-seg button { font-size: .82rem; min-height: 38px; line-height: 1.1; }
+.dif-ref { margin: 10px 2px 0; font-size: .92rem; }
+.t-falta { display: block; color: var(--perda); font-size: .8rem; margin-top: 4px; }
+/* Animais faltando (laranja) e movimentação (marrom): etiquetas, filtros e cartão da Lotação */
+.badge.faltam { background: var(--aviso-bg); color: var(--aviso); }
+.badge.mov { background: #efe4da; color: #6b4a2f; }
+.cats button.tipo.faltam { background: var(--aviso-bg); color: var(--aviso); }
+.cats button.tipo.mov { background: #efe4da; color: #6b4a2f; }
+.cats button.tipo.faltam[aria-pressed="true"] { background: var(--aviso); color: #fff; }
+.cats button.tipo.mov[aria-pressed="true"] { background: #6b4a2f; color: #fff; }
+#lot-kpis button.kpi-falta b { color: var(--aviso); }
+#lot-kpis button.kpi-falta[aria-pressed="true"] { background: var(--aviso); border-color: var(--aviso); }
+#lot-kpis button.kpi-falta[aria-pressed="true"] b { color: #fff; }
+.dif-falt.erro { border-color: var(--perda); box-shadow: 0 0 0 2px var(--perda-bg); }

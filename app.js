@@ -556,6 +556,7 @@ function escolherPotreiro(nome, { auto = false, preencher = true } = {}) {
   const min = ultimoDoPotreiro(potSel, "mineral", editId);
   $("#pe-ultima").innerHTML = [
     lot ? `<b>Lotação</b> (${fmtData(lot.data)}, ${haDias(lot.data)}): ${esc(txtAnimais(lot))}` : "",
+    lot?.faltando?.length ? `<b class="txt-falta">Animais faltando</b>: ${esc(txtFaltando(lot))}` : "",
     min ? `<b>Mineral</b> (${fmtData(min.data)}, ${haDias(min.data)}): ${esc(txtMinerais(min))}` : "",
     ...faltasAbertas().filter((f) => mesmoNome(f.potreiro, potSel))
       .map((f) => `<b class="txt-falta">Falta no depósito</b>: ${esc(f.mineral)} (desde ${fmtData(f.data)})`),
@@ -945,6 +946,7 @@ function ligarBloco(qual, ligado) {
   $(`#corpo-${qual}`).hidden = !ligado;
   if (qual === "falta") { renderFaltas(); return; }
   if (qual === "med") { if (ligado) prepararMed(); return; }
+  if (qual === "animais") agendarDif();
   const linhas = $(`#linhas-${qual === "animais" ? "animais" : "mineral"}`);
   if (ligado && !linhas.children.length && !(qual === "animais" && vazio)) {
     linhas.appendChild(qual === "animais" ? linhaAnimal() : linhaMineral());
@@ -961,6 +963,7 @@ function marcarVazio(v) {
   $("#btn-vazio").classList.toggle("on", v);
   $("#btn-vazio").setAttribute("aria-pressed", String(v));
   if (!v && !$("#linhas-animais").children.length) $("#linhas-animais").appendChild(linhaAnimal());
+  agendarDif();
 }
 
 // Pré-preenche com a última recorrida do potreiro (continua editável)
@@ -968,9 +971,10 @@ function preencherPeloHistorico(lot, min) {
   $("#linhas-animais").innerHTML = "";
   marcarVazio(false);
   $("#linhas-animais").innerHTML = "";
+  limparDif();
   if (lot?.lotacao === "conferida" && lot.animais?.length) {
-    lot.animais.forEach((a) => $("#linhas-animais").appendChild(linhaAnimal(a)));
-    $("#dica-animais").textContent = `Preenchido com a lotação de ${fmtData(lot.data)}. Confira e ajuste.`;
+    vistosDaLotacao(lot).forEach((a) => $("#linhas-animais").appendChild(linhaAnimal(a)));
+    $("#dica-animais").textContent = `Preenchido com a lotação de ${fmtData(lot.data)}${lot.faltando?.length ? " (sem os animais que estavam faltando)" : ""}. Confira e ajuste.`;
   } else {
     $("#linhas-animais").appendChild(linhaAnimal());
     $("#dica-animais").textContent = lot?.lotacao === "vazio" ? `Na recorrida de ${fmtData(lot.data)} o potreiro estava vazio.` : "";
@@ -985,7 +989,358 @@ function preencherPeloHistorico(lot, min) {
     $("#linhas-mineral").appendChild(linhaMineral());
     $("#dica-mineral").textContent = "";
   }
+  agendarDif();
 }
+
+// =====================================================================
+// Diferença entre a contagem e a lotação anterior (movimentações)
+// A pessoa digita o que contou; o app compara com a lotação anterior e pergunta o motivo.
+// Lotação de referência = contados + faltando (ainda e novos) - animais de outro potreiro.
+// =====================================================================
+const TIPOS_MOV = {
+  faltando: "Faltando (vão voltar)", morte: "Morte", venda: "Venda/saída", mudanca: "Mudou de categoria",
+  nascimento: "Nascimento", entrada: "Entrada (compra)", visitante: "São de outro potreiro", ajuste: "Contagem anterior errada",
+};
+const TIPOS_MENOS = ["faltando", "morte", "venda", "mudanca", "ajuste"];
+const TIPOS_MAIS = ["nascimento", "entrada", "visitante", "ajuste"];
+// Desfecho dos animais que estavam faltando
+const TIPOS_FALT = { voltaram: "Voltaram", ainda: "Ainda faltam", morto: "Encontrei morto", perda: "Não vão voltar (perda)" };
+const NOME_MOV = { faltando: "Faltando", retorno: "Retorno de faltando", perda: "Perda (não voltou)", morte: "Morte", venda: "Venda/saída", mudanca: "Mudança de categoria",
+  nascimento: "Nascimento", entrada: "Entrada", visitante: "De outro potreiro", ajuste: "Ajuste de contagem" };
+// Categorias de cria: aumento nelas já vem sugerido como nascimento
+const ehCria = (cat) => /^(tern|bezerr|cordeir|potr|cabrit)/.test(norm(cat));
+
+let difEstado = {};  // categoria -> { e, linhas: [{ qtd, tipo, para, brinco, causa }] } (só o que a pessoa mexeu)
+let faltEstado = {}; // "categoria|desde" -> { linhas: [{ qtd, tipo, brinco, causa }] } (só o que a pessoa mexeu)
+let difAtual = null; // último cálculo (usado ao salvar)
+function limparDif() { difEstado = {}; faltEstado = {}; difAtual = null; $("#dif-animais").innerHTML = ""; }
+
+const somaCats = (lista) => {
+  const m = {};
+  (lista || []).forEach((a) => { if (Number(a.qtd) > 0) m[a.categoria] = (m[a.categoria] || 0) + Number(a.qtd); });
+  return m;
+};
+// Animais vistos na recorrida: a lotação sem os que estavam faltando
+function vistosDaLotacao(lot) {
+  const m = somaCats(lot.animais);
+  (lot.faltando || []).forEach((f) => { m[f.categoria] = Math.max(0, (m[f.categoria] || 0) - Number(f.qtd || 0)); });
+  return (lot.animais || []).filter((a) => m[a.categoria] > 0).map((a) => ({ categoria: a.categoria, qtd: m[a.categoria] }))
+    .filter((a, i, arr) => arr.findIndex((x) => x.categoria === a.categoria) === i);
+}
+
+// Última lotação conferida antes desta recorrida (na edição, a anterior à que está sendo editada)
+function anteriorLotacao() {
+  if (!potSel) return null;
+  const data = campo("data").value || hojeISO();
+  const antigo = editId ? registros.find((r) => r.id === editId) : null;
+  return ativos().filter((r) => r.id !== editId && r.lotacao && mesmoNome(r.potreiro, potSel)
+    && (r.data < data || (r.data === data && (!antigo || (r.criado_em || "") < (antigo.criado_em || "")))))
+    .sort(ordenar)[0] || null;
+}
+
+// Contagem digitada (ignora linhas incompletas; a validação fica para o salvar)
+function contadosAtuais() {
+  const m = {};
+  $$("#linhas-animais .linha-animal").forEach((l) => {
+    const q = numero(l.querySelector(".qtd").value);
+    const it = acharItem(catalogo.categorias, l.querySelector(".combo-in").value);
+    if (it && q > 0 && Number.isInteger(q)) m[it.nome] = (m[it.nome] || 0) + q;
+  });
+  return m;
+}
+
+function calcDif() {
+  if (!blocoLigado("animais") || vazio) return null;
+  const ant = anteriorLotacao();
+  if (!ant || ant.lotacao !== "conferida" || !ant.animais?.length) return null;
+  const A = somaCats(ant.animais);
+  const C = contadosAtuais();
+  const cats = [...new Set([...Object.keys(A), ...Object.keys(C)])];
+  const D = {};
+  cats.forEach((c) => { D[c] = (C[c] || 0) - (A[c] || 0); });
+
+  // Faltando da recorrida anterior: quantos voltaram (automático pela contagem ou escolhido)
+  const entradas = (ant.faltando || []).filter((f) => Number(f.qtd) > 0)
+    .map((f) => ({ ...f, qtd: Number(f.qtd), key: `${f.categoria}|${f.desde}` }))
+    .sort((a, b) => (a.desde || "").localeCompare(b.desde || ""));
+  const fCat = {};
+  entradas.forEach((f) => { fCat[f.categoria] = (fCat[f.categoria] || 0) + f.qtd; });
+  const autoRet = {};
+  Object.keys(fCat).forEach((c) => { autoRet[c] = Math.min(fCat[c], Math.max(0, fCat[c] + (D[c] ?? -(A[c] || 0)))); });
+  // Cada faltando tem um desfecho: voltaram, ainda faltam, encontrado morto ou perda.
+  // Sem escolha da pessoa, vem da contagem (o que passou da contagem anterior voltou).
+  const m = {};   // ainda faltando (seguem na lotação)
+  const mE = {};  // não voltaram (já explicam a diferença da contagem)
+  entradas.forEach((f) => {
+    let linhas = faltEstado[f.key]?.linhas;
+    if (!linhas) {
+      const ret = Math.min(f.qtd, autoRet[f.categoria]);
+      autoRet[f.categoria] -= ret;
+      linhas = [{ qtd: ret, tipo: "voltaram" }, { qtd: f.qtd - ret, tipo: "ainda" }].filter((l) => l.qtd > 0);
+    }
+    f.linhas = linhas;
+    const soma = { voltaram: 0, ainda: 0, morto: 0, perda: 0 };
+    let tot = 0;
+    linhas.forEach((l) => {
+      const q = Math.floor(numero(l.qtd) || 0);
+      if (q > 0 && l.tipo in soma) { soma[l.tipo] += q; tot += q; }
+    });
+    f.ret = soma.voltaram;
+    f.morto = soma.morto;
+    f.perda = soma.perda;
+    f.resta = soma.ainda + Math.max(0, f.qtd - tot); // o que não foi dito continua faltando
+    f.excesso = tot > f.qtd;
+    m[f.categoria] = (m[f.categoria] || 0) + f.resta;
+    mE[f.categoria] = (mE[f.categoria] || 0) + f.qtd - f.ret;
+  });
+
+  // E: diferença ainda sem explicação, por categoria
+  const E = {};
+  cats.forEach((c) => { E[c] = D[c] + (mE[c] || 0); });
+  const ordem = (lista) => lista.sort((a, b) => Math.abs(E[b]) - Math.abs(E[a]) || a.localeCompare(b, "pt-BR"));
+  const menos = ordem(cats.filter((c) => E[c] < 0));
+  const mais = ordem(cats.filter((c) => E[c] > 0));
+
+  // Escolhas da pessoa valem enquanto a diferença daquela categoria não muda (chave com sinal)
+  const linhasDe = (c, chave, padrao) => {
+    const st = difEstado[c];
+    if (st && (st.e === chave || st.e === undefined)) { st.e = chave; return st.linhas; }
+    delete difEstado[c];
+    return padrao();
+  };
+  // Diminuiu: sugere mudança para uma categoria da mesma espécie que aumentou (menos as crias),
+  // só quando o nome começa igual (Vacas prenhas -> Vacas com cria) ou a quantidade bate
+  const prim = (c) => norm(c).split(" ")[0].replace(/s$/, "");
+  const sug = {};
+  const cap = {};
+  mais.forEach((c) => { cap[c] = E[c]; });
+  const parear = (ok) => menos.forEach((a) => {
+    if (sug[a]) return;
+    const b = mais.find((x) => cap[x] > 0 && !ehCria(x) && especieDe(x) === especieDe(a) && ok(a, x));
+    if (!b) return;
+    sug[a] = { para: b, qtd: Math.min(-E[a], cap[b]) };
+    cap[b] -= sug[a].qtd;
+  });
+  parear((a, x) => prim(a) === prim(x) && -E[a] === E[x]);
+  parear((a, x) => prim(a) === prim(x));
+  parear((a, x) => -E[a] === E[x]);
+  const cards = [];
+  menos.forEach((c) => {
+    const alvo = -E[c];
+    const linhas = linhasDe(c, -alvo, () => {
+      const g = sug[c];
+      if (!g) return [{ qtd: alvo, tipo: "" }];
+      return g.qtd < alvo ? [{ qtd: g.qtd, tipo: "mudanca", para: g.para }, { qtd: alvo - g.qtd, tipo: "" }] : [{ qtd: g.qtd, tipo: "mudanca", para: g.para }];
+    });
+    cards.push({ c, sinal: -1, alvo, linhas, antes: A[c] || 0, agora: C[c] || 0 });
+  });
+  // Aumentou: o que veio por mudança de categoria já está explicado
+  const veio = {};
+  cards.forEach((k) => k.linhas.forEach((l) => { if (l.tipo === "mudanca" && l.para) (veio[l.para] ||= []).push({ de: k.c, qtd: Number(l.qtd) || 0 }); }));
+  mais.forEach((c) => {
+    const inc = (veio[c] || []).reduce((s, v) => s + v.qtd, 0);
+    const alvo = E[c] - inc;
+    const linhas = alvo > 0 ? linhasDe(c, alvo, () => [{ qtd: alvo, tipo: ehCria(c) ? "nascimento" : "" }]) : [];
+    cards.push({ c, sinal: 1, alvo, linhas, veio: veio[c] || [], antes: A[c] || 0, agora: C[c] || 0 });
+  });
+
+  // Lotação de referência e faltando que seguem para a próxima recorrida
+  const data = campo("data").value || hojeISO();
+  const ref = {};
+  cats.forEach((c) => { ref[c] = (C[c] || 0) + (m[c] || 0); });
+  const faltando = entradas.filter((f) => f.resta > 0).map((f) => ({ categoria: f.categoria, qtd: f.resta, desde: f.desde }));
+  const movimentos = [];
+  let erro = null;
+  entradas.forEach((f) => {
+    if (f.excesso) erro ||= { key: f.key, msg: `${f.categoria}: o desfecho soma mais que os ${f.qtd} que faltavam.` };
+    if (f.ret) movimentos.push({ tipo: "retorno", categoria: f.categoria, qtd: f.ret, desde: f.desde });
+    f.linhas.forEach((l) => {
+      const q = Math.floor(numero(l.qtd) || 0);
+      if (q <= 0) return;
+      if (l.tipo === "morto") movimentos.push({ tipo: "morte", categoria: f.categoria, qtd: q, desde: f.desde,
+        ...(l.brinco ? { brinco: l.brinco } : {}), ...(l.causa ? { causa: l.causa } : {}) });
+      if (l.tipo === "perda") movimentos.push({ tipo: "perda", categoria: f.categoria, qtd: q, desde: f.desde });
+    });
+  });
+  cards.forEach((k) => {
+    let soma = 0;
+    k.linhas.forEach((l) => {
+      const q = Math.floor(numero(l.qtd) || 0);
+      if (!l.tipo || q <= 0) return;
+      soma += q;
+      const mv = { tipo: l.tipo, categoria: k.c, qtd: q };
+      if (l.tipo === "mudanca") { if (!l.para) erro ||= { c: k.c, msg: `Escolha para qual categoria mudaram os ${k.c}.` }; mv.para = l.para; }
+      if (l.tipo === "morte") { if (l.brinco) mv.brinco = l.brinco; if (l.causa) mv.causa = l.causa; }
+      if (l.tipo === "faltando") { ref[k.c] += q; faltando.push({ categoria: k.c, qtd: q, desde: data }); }
+      if (l.tipo === "visitante") ref[k.c] -= q;
+      movimentos.push(mv);
+    });
+    if (k.alvo < 0) erro ||= { c: k.c, msg: `${k.c}: as mudanças de categoria passam do aumento contado.` };
+    else if (soma > k.alvo) erro ||= { c: k.c, msg: `${k.c}: a explicação soma ${soma}, mas a diferença é ${k.alvo}.` };
+    k.semExplicar = Math.max(0, k.alvo - soma);
+  });
+  const ordemC = Object.keys(C);
+  const refLista = [...ordemC, ...cats.filter((c) => !ordemC.includes(c))]
+    .filter((c) => ref[c] > 0).map((c) => ({ categoria: c, qtd: ref[c] }));
+  return { ant, A, C, entradas, cards, ref: refLista, faltando, movimentos, erro, data };
+}
+
+let difTimer = null;
+function agendarDif() { clearTimeout(difTimer); difTimer = setTimeout(renderDif, 150); }
+
+function renderDif() {
+  const box = $("#dif-animais");
+  difAtual = calcDif();
+  const d = difAtual;
+  if (!d || (!d.entradas.length && !d.cards.length)) { box.innerHTML = ""; return; }
+  const opcoes = (k, l) => {
+    const tipos = k.sinal < 0 ? TIPOS_MENOS : TIPOS_MAIS;
+    const destinos = d.cards.filter((x) => x.sinal > 0).map((x) => x.c);
+    return `<option value="">O que aconteceu?</option>` + tipos
+      .filter((t) => t !== "mudanca" || destinos.length || l.tipo === "mudanca")
+      .map((t) => `<option value="${t}" ${l.tipo === t ? "selected" : ""}>${TIPOS_MOV[t]}</option>`).join("");
+  };
+  const linha = (k, l, i) => {
+    const destinos = d.cards.filter((x) => x.sinal > 0).map((x) => x.c);
+    if (l.para && !destinos.includes(l.para)) destinos.push(l.para);
+    return `<div class="dif-mov" data-i="${i}">
+      <div class="dif-mov-l">
+        <input type="text" class="dif-qtd" inputmode="numeric" value="${esc(l.qtd ?? "")}" aria-label="Quantidade">
+        <select class="dif-tipo">${opcoes(k, l)}</select>
+        ${k.linhas.length > 1 ? `<button type="button" class="btn-x" data-dif-rem aria-label="Remover">×</button>` : ""}
+      </div>
+      ${l.tipo === "mudanca" ? `<label class="dif-extra">Passaram para <select class="dif-para"><option value="">escolha</option>${destinos.map((c) => `<option ${l.para === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>` : ""}
+      ${l.tipo === "morte" ? `<div class="dif-extra dif-morte">
+        <input type="text" class="dif-brinco" placeholder="Brinco (opcional)" value="${esc(l.brinco || "")}" autocomplete="off">
+        <input type="text" class="dif-causa" placeholder="Causa provável (opcional)" value="${esc(l.causa || "")}" autocomplete="off"></div>` : ""}
+    </div>`;
+  };
+  const card = (k) => {
+    const sinal = k.sinal < 0 ? `−${fmtNum(-(k.agora - k.antes))}` : `+${fmtNum(k.agora - k.antes)}`;
+    const veio = (k.veio || []).filter((v) => v.qtd > 0).map((v) => `<small class="dif-veio">${fmtNum(v.qtd)} vieram de ${esc(v.de)}</small>`).join("");
+    const resto = k.semExplicar && k.linhas.some((l) => l.tipo)
+      ? `<small class="dif-resto">${fmtNum(k.semExplicar)} sem explicação: contam como contagem anterior errada.</small>` : "";
+    return `<div class="dif-cat ${d.erro?.c === k.c ? "erro" : ""}" data-cat="${esc(k.c)}">
+      <div class="dif-tit"><b>${esc(k.c)}</b> <span class="${k.sinal < 0 ? "dif-menos" : "dif-mais"}">${sinal}</span> <small>${fmtNum(k.antes)} → ${fmtNum(k.agora)}</small></div>
+      ${veio}
+      ${k.linhas.map((l, i) => linha(k, l, i)).join("")}
+      ${k.alvo > 0 ? `<button type="button" class="link dif-add" data-dif-add>+ Dividir em outro motivo</button>` : ""}
+      ${resto}
+    </div>`;
+  };
+  const linhaFalt = (f, l, i) => `<div class="dif-mov" data-i="${i}">
+      <div class="dif-mov-l">
+        <input type="text" class="dif-qtd" inputmode="numeric" value="${esc(l.qtd ?? "")}" aria-label="Quantidade">
+        <select class="dif-tipo">${Object.entries(TIPOS_FALT).map(([t, n]) => `<option value="${t}" ${l.tipo === t ? "selected" : ""}>${n}</option>`).join("")}</select>
+        ${f.linhas.length > 1 ? `<button type="button" class="btn-x" data-dif-rem aria-label="Remover">×</button>` : ""}
+      </div>
+      ${l.tipo === "morto" ? `<div class="dif-extra dif-morte">
+        <input type="text" class="dif-brinco" placeholder="Brinco (opcional)" value="${esc(l.brinco || "")}" autocomplete="off">
+        <input type="text" class="dif-causa" placeholder="Causa provável (opcional)" value="${esc(l.causa || "")}" autocomplete="off"></div>` : ""}
+    </div>`;
+  const falt = d.entradas.map((f) => `<div class="dif-falt ${d.erro?.key === f.key ? "erro" : ""}" data-key="${esc(f.key)}">
+      <div class="dif-tit"><b>${fmtNum(f.qtd)} ${esc(f.categoria)}</b> faltando desde ${fmtData(f.desde)} <small>(${haDias(f.desde)})</small></div>
+      ${f.linhas.map((l, i) => linhaFalt(f, l, i)).join("")}
+      <button type="button" class="link dif-add" data-dif-add>+ Dividir em outro desfecho</button>
+    </div>`).join("");
+  const txtRef = d.ref.map((a) => {
+    const f = d.faltando.filter((x) => x.categoria === a.categoria).reduce((s, x) => s + x.qtd, 0);
+    return `${fmtNum(a.qtd)} ${esc(a.categoria)}${f ? ` <span class="txt-falta">(${fmtNum(f)} faltando)</span>` : ""}`;
+  }).join(" · ") || "nenhum animal";
+  box.innerHTML = `<div class="dif">
+    ${d.entradas.length ? `<div class="dif-sec">Animais faltando na última recorrida</div>${falt}` : ""}
+    ${d.cards.length ? `<div class="dif-sec">Diferença com a lotação de ${fmtData(d.ant.data)}</div>${d.cards.map(card).join("")}` : ""}
+    <p class="dif-ref"><b>Próxima lotação de referência:</b> ${txtRef}</p>
+  </div>`;
+}
+
+// Lê as linhas de um cartão do quadro para o estado (a pessoa mexeu nele)
+const lerLinhasDif = (el) => $$(".dif-mov", el).map((m) => ({
+  qtd: m.querySelector(".dif-qtd").value.trim(),
+  tipo: m.querySelector(".dif-tipo").value,
+  para: m.querySelector(".dif-para")?.value || "",
+  brinco: m.querySelector(".dif-brinco")?.value.trim().toUpperCase() || "",
+  causa: m.querySelector(".dif-causa")?.value.trim() || "",
+}));
+// Cartão do quadro (diferença ou faltando): guarda as linhas como escolha da pessoa
+function guardarCard(cardEl) {
+  if (cardEl.classList.contains("dif-falt")) return (faltEstado[cardEl.dataset.key] = { linhas: lerLinhasDif(cardEl) });
+  const c = cardEl.dataset.cat;
+  const k = difAtual?.cards.find((x) => x.c === c);
+  difEstado[c] = {
+    e: k ? k.sinal * k.alvo : undefined,
+    linhas: $$(".dif-mov", cardEl).map((m) => ({
+      qtd: m.querySelector(".dif-qtd").value.trim(),
+      tipo: m.querySelector(".dif-tipo").value,
+      para: m.querySelector(".dif-para")?.value || "",
+      brinco: m.querySelector(".dif-brinco")?.value.trim().toUpperCase() || "",
+      causa: m.querySelector(".dif-causa")?.value.trim() || "",
+    })),
+  };
+  return difEstado[c];
+}
+
+function ligarEventosDif() {
+  const box = $("#dif-animais");
+  ["input", "focusout", "click"].forEach((ev) => $("#linhas-animais").addEventListener(ev, agendarDif));
+  campo("data").addEventListener("change", agendarDif);
+  box.addEventListener("input", (e) => {
+    const cardEl = e.target.closest(".dif-cat, .dif-falt");
+    if (cardEl) { guardarCard(cardEl); cardEl.classList.remove("erro"); }
+  });
+  // Quantidade e tipo mudam outros cartões (mudança de categoria) e a lotação de referência: redesenha
+  box.addEventListener("change", (e) => {
+    const cardEl = e.target.closest(".dif-cat, .dif-falt");
+    if (cardEl) guardarCard(cardEl);
+    if (e.target.matches(".dif-qtd, .dif-tipo, .dif-para")) renderDif();
+  });
+  box.addEventListener("click", (e) => {
+    const cardEl = e.target.closest(".dif-cat, .dif-falt");
+    if (!cardEl) return;
+    if (e.target.closest("[data-dif-add]")) {
+      const st = guardarCard(cardEl);
+      st.linhas.push({ qtd: "", tipo: cardEl.classList.contains("dif-falt") ? "ainda" : "" });
+      renderDif();
+      return;
+    }
+    const rem = e.target.closest("[data-dif-rem]");
+    if (rem) {
+      const st = guardarCard(cardEl);
+      st.linhas.splice(Number(rem.closest(".dif-mov").dataset.i), 1);
+      renderDif();
+    }
+  });
+}
+
+// Na edição: devolve a contagem e as escolhas feitas
+function restaurarDif(r) {
+  difEstado = {};
+  faltEstado = {};
+  const desfecho = { retorno: "voltaram", morte: "morto", perda: "perda" };
+  (r.movimentos || []).forEach((m) => {
+    // Com "desde": desfecho de animais que estavam faltando (o resto continua faltando)
+    if (m.desde && desfecho[m.tipo]) {
+      (faltEstado[`${m.categoria}|${m.desde}`] ||= { linhas: [] }).linhas
+        .push({ qtd: m.qtd, tipo: desfecho[m.tipo], brinco: m.brinco || "", causa: m.causa || "" });
+      return;
+    }
+    (difEstado[m.categoria] ||= { e: undefined, linhas: [] }).linhas.push({ qtd: m.qtd, tipo: m.tipo, para: m.para || "", brinco: m.brinco || "", causa: m.causa || "" });
+  });
+  // Faltando que continuaram: completa com "Ainda faltam"
+  const ant = anteriorLotacao();
+  (ant?.faltando || []).forEach((f) => {
+    const st = faltEstado[`${f.categoria}|${f.desde}`];
+    if (!st) return;
+    const resto = Number(f.qtd) - st.linhas.reduce((s, l) => s + Number(l.qtd), 0);
+    if (resto > 0) st.linhas.push({ qtd: resto, tipo: "ainda" });
+  });
+}
+
+const txtMov = (r) => (r.movimentos || []).map((m) => m.tipo === "mudanca"
+  ? `${fmtNum(m.qtd)} ${m.categoria} → ${m.para}`
+  : `${NOME_MOV[m.tipo] || m.tipo}: ${fmtNum(m.qtd)} ${m.categoria}${m.brinco ? ` (brinco ${m.brinco})` : ""}${m.causa ? ` (${m.causa})` : ""}`).join(" · ");
+const txtFaltando = (lot) => (lot?.faltando || []).filter((f) => f.qtd > 0)
+  .map((f) => `${fmtNum(f.qtd)} ${f.categoria} (desde ${fmtData(f.desde)}, ${haDias(f.desde)})`).join(" · ");
 
 // Minerais usados no potreiro nos últimos dias (ex.: um para as vacas e outro para os
 // terneiros), mesmo que na última recorrida só um deles tenha sido reposto.
@@ -1421,6 +1776,7 @@ function limparForm() {
   $("#linhas-mineral").innerHTML = "";
   $("#dica-animais").textContent = "";
   $("#dica-mineral").textContent = "";
+  limparDif();
   marcarVazio(false);
   $("#linhas-animais").innerHTML = "";
   ligarBloco("animais", false);
@@ -1450,7 +1806,8 @@ function editar(id) {
   $("#linhas-mineral").innerHTML = "";
   // Medicação sem potreiro: os animais conferidos ficaram guardados na medicação
   const animaisMed = !r.potreiro && !r.lotacao ? r.medicacao?.lote || [] : [];
-  (animaisMed.length ? animaisMed : r.animais || []).forEach((a) => $("#linhas-animais").appendChild(linhaAnimal(a)));
+  (animaisMed.length ? animaisMed : r.contados?.length ? r.contados : r.animais || []).forEach((a) => $("#linhas-animais").appendChild(linhaAnimal(a)));
+  restaurarDif(r);
   (r.minerais || []).forEach((m) => $("#linhas-mineral").appendChild(linhaMineral(m)));
   marcarVazio(r.lotacao === "vazio");
   marcarTemMineral(!!r.tem_mineral);
@@ -1458,6 +1815,7 @@ function editar(id) {
   ligarBloco("animais", !!r.lotacao || animaisMed.length > 0);
   ligarBloco("mineral", !!r.minerais?.length);
   atualizarCatsMed();
+  renderDif();
   faltaSel = new Set(faltasAtivas().filter((f) => f.recorrida_id === id).map((f) => f.mineral));
   ligarBloco("falta", faltaSel.size > 0);
   if (!r.lotacao && !animaisMed.length) { $("#linhas-animais").innerHTML = ""; }
@@ -1519,6 +1877,18 @@ async function salvar(ev) {
     if (!r.itens.length) return falha("Informe os animais ou toque em “Potreiro vazio”.");
     animais = r.itens;
   }
+  // Diferença com a lotação anterior: movimentações e lotação de referência
+  const contados = animais;
+  let movimentos = [], faltandoRec = [];
+  if (comAnimais && !vazio && !semPot) {
+    renderDif();
+    const d = difAtual;
+    if (d?.erro) {
+      $("#dif-animais .erro")?.scrollIntoView({ block: "center", behavior: "smooth" });
+      return falha(d.erro.msg);
+    }
+    if (d) { movimentos = d.movimentos; faltandoRec = d.faltando; animais = d.ref; }
+  }
   let minerais = [];
   if (comMineral) {
     const r = lerLinhas("mineral");
@@ -1529,7 +1899,7 @@ async function salvar(ev) {
 
   let medicacao = null;
   if (comMed) {
-    const r = lerMed(comAnimais && !vazio ? animais.reduce((s, a) => s + Number(a.qtd), 0) : null);
+    const r = lerMed(comAnimais && !vazio ? contados.reduce((s, a) => s + Number(a.qtd), 0) : null);
     if (r.erro) return falha(r.msg, r.erro);
     medicacao = r.med;
   }
@@ -1556,6 +1926,9 @@ async function salvar(ev) {
     potreiro: semPot ? "" : potSel,
     lotacao: semPot ? "" : comAnimais ? (vazio ? "vazio" : "conferida") : "",
     animais: semPot ? [] : animais,
+    contados: !semPot && (movimentos.length || faltandoRec.length) ? contados : null,
+    movimentos: semPot ? [] : movimentos,
+    faltando: semPot ? [] : faltandoRec,
     minerais,
     tem_mineral: semPot ? false : temMineral,
     medicacao,
@@ -1587,6 +1960,8 @@ function cartao(r) {
     r.lotacao === "vazio" ? `<span class="badge vazio">Vazio</span>` : "",
     r.minerais?.length ? `<span class="badge min">Mineral</span>` : "",
     r.tem_mineral ? `<span class="badge tem">Tem mineral</span>` : "",
+    r.lotacao === "conferida" && r.faltando?.length ? `<span class="badge faltam">Animais faltando</span>` : "",
+    r.movimentos?.length ? `<span class="badge mov">Movimentação</span>` : "",
     r.medicacao ? `<span class="badge med">Medicamento</span>` : "",
   ].join("");
   const fs = faltasAtivas().filter((f) => f.recorrida_id === r.id);
@@ -1597,6 +1972,8 @@ function cartao(r) {
       <div>
         <div class="reg-pot">${r.potreiro ? esc(r.potreiro) : `<span class="muted-s">Sem potreiro</span>`} ${badges}${fs.length ? `<span class="badge falta">Falta</span>` : ""}</div>
         ${r.lotacao ? `<div class="reg-linha"><i>Animais</i>${esc(txtAnimais(r))}${r.animais?.length > 1 ? ` <b>(${fmtNum(tot)})</b>` : ""}</div>` : ""}
+        ${r.movimentos?.length ? `<div class="reg-linha"><i>Movimentos</i>${esc(txtMov(r))}</div>` : ""}
+        ${r.lotacao === "conferida" && r.faltando?.length ? `<div class="reg-linha"><i>Faltando</i><span class="txt-falta">${esc(txtFaltando(r))}</span></div>` : ""}
         ${r.minerais?.length ? `<div class="reg-linha"><i>Mineral</i>${esc(txtMinerais(r))}</div>` : ""}
         ${r.medicacao ? `<div class="reg-linha"><i>Medicamentos</i>${esc(txtMed(r.medicacao))}</div>` : ""}
         ${fs.length ? `<div class="reg-linha"><i>Falta no depósito</i>${fs.map((f) => esc(f.mineral) + (f.reposto_em ? " (reposto)" : "")).join(" · ")}</div>` : ""}
@@ -1619,7 +1996,9 @@ const TIPOS_REG = [
   { id: "vazio", nome: "Vazio", cls: "vazio", tem: (r) => r.lotacao === "vazio" },
   { id: "mineral", nome: "Mineral", cls: "min", tem: (r) => !!r.minerais?.length },
   { id: "tem", nome: "Tem mineral", cls: "tem", tem: (r) => !!r.tem_mineral },
-  { id: "falta", nome: "Falta", cls: "falta", tem: (r) => faltasAtivas().some((f) => f.recorrida_id === r.id) },
+  { id: "falta", nome: "Falta de mineral", cls: "falta", tem: (r) => faltasAtivas().some((f) => f.recorrida_id === r.id) },
+  { id: "faltam", nome: "Animais faltando", cls: "faltam", tem: (r) => r.lotacao === "conferida" && !!r.faltando?.length },
+  { id: "mov", nome: "Movimentação", cls: "mov", tem: (r) => !!r.movimentos?.length },
   { id: "med", nome: "Medicamento", cls: "med", tem: (r) => !!r.medicacao },
 ];
 const tipoFiltro = new Set();
@@ -1705,20 +2084,26 @@ function renderLotacao() {
   // Cartões de cima (espécies e situação): um ou mais, "OU" entre eles
   [...topoFiltro].forEach((k) => { if (k.startsWith("esp:") && !especies.includes(k.slice(4))) topoFiltro.delete(k); });
   const kpi = (v, r, filtro) => `<button type="button" class="kpi" data-kpi="${esc(filtro)}" aria-pressed="${topoFiltro.has(filtro)}"><b>${v}</b><span>${r}</span></button>`;
-  $("#lot-kpis").innerHTML = [
+  const cartoes = [
     ...especies.map((e) => kpi(fmtNum(totEsp[e]), e, "esp:" + e)),
     kpi(ocupados.length, "Ocupados", "ocupados"),
     kpi(linhas.filter((l) => l.grupo === "vazios").length, "Vazios", "vazios"),
     kpi(linhas.filter((l) => l.grupo === "sem").length, "Sem info", "sem"),
-  ].join("");
+  ];
+  // "Com falta": potreiros com animais faltando (o cartão só aparece quando há algum)
+  const comFalta = linhas.filter((l) => l.grupo === "ocupados" && l.lot.faltando?.length).length;
+  if (!comFalta) topoFiltro.delete("faltando");
+  else cartoes.push(kpi(comFalta, "Com falta", "faltando").replace('class="kpi"', 'class="kpi kpi-falta"'));
+  $("#lot-kpis").innerHTML = cartoes.join("");
   const espSel = [...topoFiltro].filter((k) => k.startsWith("esp:")).map((k) => k.slice(4));
   const passaTopo = (l) => !topoFiltro.size || [...topoFiltro].some((k) => (k.startsWith("esp:")
     ? l.grupo === "ocupados" && (porEspecie(l.lot)[k.slice(4)] || 0) > 0
+    : k === "faltando" ? l.grupo === "ocupados" && !!l.lot.faltando?.length
     : l.grupo === k));
 
   // Botões de categoria: só as dos potreiros que passaram em cima. Com espécie marcada (e sem "Ocupados"),
   // só as categorias das espécies marcadas.
-  const todasCats = !topoFiltro.size || topoFiltro.has("ocupados");
+  const todasCats = !topoFiltro.size || topoFiltro.has("ocupados") || topoFiltro.has("faltando");
   const porCat = {};
   linhas.filter((l) => l.grupo === "ocupados" && passaTopo(l)).forEach((l) => l.lot.animais.forEach((a) => {
     if (!todasCats && !espSel.includes(especieDe(a.categoria))) return;
@@ -1736,7 +2121,7 @@ function renderLotacao() {
   // Tabela compacta: Potreiro | Animais | Última atualização (tocar na linha abre o registro)
   const linha = (l) => {
     const animais = l.grupo === "ocupados"
-      ? totaisLinha(l.lot) + l.lot.animais.map((a) => `<small class="${catFiltro.has(a.categoria) ? "cat-sel" : ""}">${fmtQ(a.qtd)} ${esc(a.categoria)}</small>`).join("")
+      ? animaisLinha(l.lot)
       : l.grupo === "vazios" ? `<span class="t-vazio">Vazio</span>` : `<span class="t-sem">Sem informação</span>`;
     const velho = l.lot && diasEntre(l.lot.data, hoje) > DIAS_LOTACAO_VELHA;
     const data = l.lot ? `${fmtData(l.lot.data).slice(0, 6)}${l.lot.data.slice(2, 4)}<small class="${velho ? "velho" : ""}">${haDias(l.lot.data)}</small>` : "–";
@@ -1755,13 +2140,15 @@ function renderLotacao() {
     : `<p class="vazio card">Nenhum potreiro encontrado.</p>`;
 }
 
-// Totais da linha da Lotação: "85 bov." à esquerda e "12 ov." à direita (só se houver)
-function totaisLinha(lot) {
+// Animais da linha da Lotação: uma coluna por espécie (bovinos à esquerda, sempre), com o total
+// e as categorias daquela espécie embaixo
+function animaisLinha(lot) {
   const t = porEspecie(lot);
-  const bov = `<b>${fmtNum(t.Bovinos || 0)} bov.</b>`;
-  const outros = Object.keys(t).filter((e) => e !== "Bovinos" && t[e] > 0).sort(ordemEspecie)
-    .map((e) => `<b>${fmtNum(t[e])} ${ABREV_ESPECIE[e] || esc(e.toLowerCase())}</b>`).join(" ");
-  return `<div class="t-tot">${bov}${outros ? `<span>${outros}</span>` : ""}</div>`;
+  const esps = ["Bovinos", ...Object.keys(t).filter((e) => e !== "Bovinos" && t[e] > 0).sort(ordemEspecie)];
+  const cat = (a) => `<small class="${catFiltro.has(a.categoria) ? "cat-sel" : ""}">${fmtQ(a.qtd)} ${esc(a.categoria)}</small>`;
+  return `<div class="t-tot">${esps.map((e) => `<div class="t-esp${!t[e] && esps.length > 1 ? " t-zero" : ""}"><b>${fmtNum(t[e] || 0)} ${ABREV_ESPECIE[e] || esc(e.toLowerCase())}</b>`
+    + lot.animais.filter((a) => especieDe(a.categoria) === e).map(cat).join("") + "</div>").join("")}</div>`
+    + (lot.faltando?.length ? `<small class="t-falta">Faltando: ${esc(txtFaltando(lot))}</small>` : "");
 }
 
 function irParaPotreiro(nome) {
@@ -1795,8 +2182,19 @@ function cabecasDia(nome, ini, fim) {
   return { soma, dias };
 }
 
+function renderFaltandoPainel() {
+  const linhas = [];
+  estadoPotreiros().forEach((e) => (e.lotacao?.lotacao === "conferida" ? e.lotacao.faltando || [] : [])
+    .forEach((f) => { if (f.qtd > 0) linhas.push({ pot: e.lotacao.potreiro, ...f, dias: diasEntre(f.desde, hojeISO()) }); }));
+  linhas.sort((a, b) => b.dias - a.dias || a.pot.localeCompare(b.pot, "pt-BR"));
+  $("#p-faltando").innerHTML = linhas.length ? `<table><thead><tr><th>Potreiro</th><th>Animais</th><th>Desde</th><th class="num">Dias</th></tr></thead><tbody>`
+    + linhas.map((l) => `<tr><td>${esc(l.pot)}</td><td>${fmtNum(l.qtd)} ${esc(l.categoria)}</td><td>${fmtData(l.desde)}</td><td class="num">${l.dias}</td></tr>`).join("")
+    + `</tbody></table>` : `<p class="vazio">Nenhum animal faltando.</p>`;
+}
+
 function renderPainel() {
   renderFaltasPainel();
+  renderFaltandoPainel();
   const hoje = hojeISO();
   const nDias = Number($("#p-periodo").value);
   const ini = somaDias(hoje, -nDias + 1);
@@ -2015,6 +2413,7 @@ function ligarEventos() {
     const add = e.target.closest("[data-add-med]");
     if (add) { const l = linhaMed(); add.closest(".med-animal").querySelector(".linhas-med").appendChild(l); l.querySelector(".dose").focus(); }
   });
+  ligarEventosDif();
   $("#add-animal").addEventListener("click", () => { const l = linhaAnimal(); $("#linhas-animais").appendChild(l); l.querySelector(".qtd").focus(); });
   $("#add-mineral").addEventListener("click", () => { const l = linhaMineral(); $("#linhas-mineral").appendChild(l); l.querySelector(".combo-in").focus(); });
   // "Vazio" ao lado da chave: liga o bloco de animais já marcado como vazio
@@ -2049,6 +2448,7 @@ function ligarEventos() {
       acertarCombo(inp);
       fecharCombos();
       if (inp.closest("#falta-combo")) adicionarFaltaDoCombo(inp);
+    if (inp.closest("#linhas-animais")) agendarDif();
     }, 150);
   });
   // Tocar numa opção não tira o foco do campo antes da escolha
@@ -2065,6 +2465,7 @@ function ligarEventos() {
     inp.classList.remove("erro");
     inp.blur();
     if (inp.closest("#falta-combo")) adicionarFaltaDoCombo(inp);
+    if (inp.closest("#linhas-animais")) agendarDif();
   });
 
   // Listas

@@ -119,6 +119,7 @@
               <button type="button" class="btn-mais" id="add-animal" aria-label="Adicionar categoria">+</button>
               <span class="muted-s">Adicionar categoria</span>
             </div>
+            <div id="dif-animais"></div>
             <div id="aviso-vazio" class="aviso-vazio" hidden>
               <b>Potreiro vazio.</b> Será registrado que não há animais aqui. Toque em “Vazio” de novo para desfazer.
             </div>
@@ -263,6 +264,11 @@
       <div class="card card-falta">
         <h3>Falta no depósito</h3>
         <div id="p-faltas"></div>
+      </div>
+      <div class="card">
+        <h3>Animais faltando</h3>
+        <p class="muted">Não estavam no potreiro na última recorrida, mas continuam na lotação dele até voltarem.</p>
+        <div id="p-faltando" class="tabela"></div>
       </div>
       <div class="painel-grid">
         <div class="card"><h3>Mineral colocado (sacos)</h3><div id="g-min" class="barras"></div></div>

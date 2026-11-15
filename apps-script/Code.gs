@@ -16,6 +16,7 @@ const ABA_APARELHOS = "Aparelhos";
 const ABA_FALTAS = "Faltas";
 const ABA_MEDICAMENTOS = "Medicamentos";   // cadastro dos medicamentos
 const ABA_MEDICACOES = "Medicações";       // eventos: uma linha por medicamento aplicado
+const ABA_MOVIMENTACOES = "Movimentações"; // eventos de animais: faltando, morte, venda, nascimento...
 
 const CABECALHO_MEDICAMENTOS = ["Medicamento", "Nomes alternativos", "Unidade da dose", "Ativo (SIM/NÃO)", "Tipo"];
 // Sugestões da coluna Tipo (dá para digitar outro); o Painel usa Carrapaticida e Vermífugo
@@ -24,6 +25,14 @@ const TIPOS_MEDICAMENTO = ["Vermífugo", "Carrapaticida", "Endectocida", "Antibi
 // com os brincos juntos. As linhas de uma recorrida são refeitas a cada alteração dela.
 const CABECALHO_MEDICACOES = ["Data", "Potreiro", "Aplicado em", "Categorias", "Quantidade de animais", "Dose por animal", "Total aplicado", "Unidade", "Medicamento", "Brincos", "Motivo", "Registrado por", "ID da recorrida"];
 const APLICADO_EM = { lote: "Todo o lote", animais: "Animal específico" };
+
+// Movimentações: explicam a diferença entre a contagem e a lotação anterior (uma linha por evento).
+// As linhas de uma recorrida são refeitas a cada alteração dela.
+const CABECALHO_MOVIMENTACOES = ["Data", "Potreiro", "Tipo", "Categoria", "Quantidade", "Nova categoria", "Brinco", "Causa provável", "Faltando desde", "Registrado por", "ID da recorrida"];
+const TIPO_MOVIMENTO = {
+  faltando: "Faltando", retorno: "Retorno de faltando", perda: "Perda (não voltou)", morte: "Morte", venda: "Venda/saída", mudanca: "Mudança de categoria",
+  nascimento: "Nascimento", entrada: "Entrada (compra)", visitante: "Animais de outro potreiro", ajuste: "Ajuste de contagem",
+};
 
 // Aba Faltas: uma linha por mineral em falta no depósito de um potreiro
 const COLUNAS_FALTAS = ["id", "data", "potreiro", "mineral", "registrado_por", "criado_em", "reposto_em", "reposto_por", "atualizado_em", "excluido", "recorrida_id"];
@@ -47,6 +56,9 @@ const PREFIXO_SACOS = "Sacos: ";
 const COL_TEM_MINERAL = "Tem mineral";
 // Coluna oculta com os dados da medicação da recorrida (a aba Medicações é montada a partir dela)
 const COL_MEDICACAO = "Medicação (dados, não editar)";
+// Coluna oculta com a contagem, as movimentações e os animais faltando (a aba Movimentações sai dela).
+// As colunas "Animais: ..." guardam a lotação de referência (contados + faltando - de outro potreiro).
+const COL_MOVIMENTO = "Movimentação (dados, não editar)";
 const LOTACAO_TXT = { conferida: "Conferida", vazio: "Vazio", "": "Não conferida" };
 
 const CABECALHO_POTREIROS = [
@@ -312,6 +324,7 @@ function sincronizar_(recebidos, alteracoes, usuario, faltasRecebidas) {
 
     if (novos.length) sh.getRange(sh.getLastRow() + 1, 1, novos.length, cab.length).setValues(novos);
     sincronizarMedicacoes_(tocados, base.lista);
+    sincronizarMovimentacoes_(tocados, base.lista);
     return {
       ok: true,
       usuario: usuario,
@@ -461,16 +474,19 @@ function garantirCabecalho_(sh, recebidos) {
   });
   if (cab.indexOf(COL_TEM_MINERAL) < 0) faltam.push(COL_TEM_MINERAL);
   if (cab.indexOf(COL_MEDICACAO) < 0) faltam.push(COL_MEDICACAO);
+  if (cab.indexOf(COL_MOVIMENTO) < 0) faltam.push(COL_MOVIMENTO);
   if (faltam.length) {
     const falta = cab.length + faltam.length - sh.getMaxColumns();
     if (falta > 0) sh.insertColumnsAfter(sh.getMaxColumns(), falta);
     sh.getRange(1, cab.length + 1, 1, faltam.length).setValues([faltam]).setFontWeight("bold");
     cab = cab.concat(faltam);
     const iMed = cab.indexOf(COL_MEDICACAO);
-    if (faltam.indexOf(COL_MEDICACAO) >= 0) {
-      sh.getRange(2, iMed + 1, Math.max(sh.getMaxRows() - 1, 1), 1).setNumberFormat("@");
-      sh.hideColumns(iMed + 1);
-    }
+    [COL_MEDICACAO, COL_MOVIMENTO].forEach((col) => {
+      if (faltam.indexOf(col) < 0) return;
+      const i = cab.indexOf(col);
+      sh.getRange(2, i + 1, Math.max(sh.getMaxRows() - 1, 1), 1).setNumberFormat("@");
+      sh.hideColumns(i + 1);
+    });
   }
   return cab;
 }
@@ -497,6 +513,15 @@ function lerRegistros_(sh, cab) {
     const iMed = cab.indexOf(COL_MEDICACAO);
     r.medicacao = null;
     if (iMed >= 0 && String(l[iMed]).trim()) { try { r.medicacao = JSON.parse(l[iMed]); } catch (e) { r.medicacao = null; } }
+    const iMov = cab.indexOf(COL_MOVIMENTO);
+    if (iMov >= 0 && String(l[iMov]).trim()) {
+      try {
+        const mv = JSON.parse(l[iMov]);
+        if (mv.contados) r.contados = mv.contados;
+        if (mv.movimentos) r.movimentos = mv.movimentos;
+        if (mv.faltando) r.faltando = mv.faltando;
+      } catch (e) { /* coluna corrompida: ignora */ }
+    }
     for (let i = CABECALHO.length; i < cab.length; i++) {
       const q = Number(l[i]);
       if (!q) continue;
@@ -547,6 +572,13 @@ function paraLinha_(r, cab, kgSaco) {
     }
     if (c === COL_TEM_MINERAL) return r.tem_mineral ? "SIM" : "";
     if (c === COL_MEDICACAO) return r.medicacao ? JSON.stringify(r.medicacao) : "";
+    if (c === COL_MOVIMENTO) {
+      const mv = {};
+      if (r.lotacao === "conferida" && r.contados && r.contados.length) mv.contados = r.contados;
+      if (r.movimentos && r.movimentos.length) mv.movimentos = r.movimentos;
+      if (r.lotacao === "conferida" && r.faltando && r.faltando.length) mv.faltando = r.faltando;
+      return Object.keys(mv).length ? JSON.stringify(mv) : "";
+    }
     return "";
   });
   return linha;
@@ -605,6 +637,62 @@ function abaMedicacoes_() {
     return { sh: sh, refazer: true };
   }
   return { sh: sh, refazer: false };
+}
+
+// ---------------------------------------------------------------------
+// Aba Movimentações (montada a partir da coluna oculta da aba Recorridas)
+// ---------------------------------------------------------------------
+function abaMovimentacoes_() {
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(ABA_MOVIMENTACOES);
+  let refazer = false;
+  if (!sh) {
+    sh = ss.insertSheet(ABA_MOVIMENTACOES);
+    sh.setFrozenRows(1);
+    refazer = true;
+  }
+  const nCol = CABECALHO_MOVIMENTACOES.length;
+  const atual = sh.getRange(1, 1, 1, Math.max(nCol, sh.getLastColumn())).getValues()[0].map(String);
+  if (refazer || atual.slice(0, nCol).join("|") !== CABECALHO_MOVIMENTACOES.join("|") || atual.slice(nCol).some((v) => v.trim())) {
+    sh.clearContents();
+    sh.getRange(1, 1, 1, nCol).setValues([CABECALHO_MOVIMENTACOES]).setFontWeight("bold").setBackground("#6b4a2f").setFontColor("#ffffff");
+    const n = Math.max(sh.getMaxRows() - 1, 1);
+    sh.getRange(2, 1, n, 1).setNumberFormat("dd/mm/yyyy");
+    sh.getRange(2, 7, n, 1).setNumberFormat("@");
+    sh.getRange(2, 9, n, 1).setNumberFormat("dd/mm/yyyy");
+    sh.getRange(2, nCol, n, 1).setNumberFormat("@");
+    sh.showColumns(1, Math.max(nCol, sh.getMaxColumns()));
+    sh.hideColumns(nCol, 1);
+    return { sh: sh, refazer: true };
+  }
+  return { sh: sh, refazer: false };
+}
+
+function linhasMovimentacao_(r) {
+  if (r.excluido || !r.movimentos || !r.movimentos.length) return [];
+  const data = (iso) => { const p = String(iso || "").split("-"); return p.length === 3 ? new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])) : ""; };
+  return r.movimentos.map((m) => [
+    data(r.data), r.potreiro, TIPO_MOVIMENTO[m.tipo] || m.tipo, m.categoria, Number(m.qtd) || "", m.para || "",
+    m.brinco || "", m.causa || "", m.desde ? data(m.desde) : m.tipo === "faltando" ? data(r.data) : "", r.registrado_por || "", r.id,
+  ]);
+}
+
+function sincronizarMovimentacoes_(tocados, todos) {
+  const aba = abaMovimentacoes_();
+  const sh = aba.sh;
+  if (aba.refazer) tocados = (todos || []).filter((r) => r.movimentos && r.movimentos.length && !r.excluido);
+  const nCol = CABECALHO_MOVIMENTACOES.length;
+  let linhas = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, nCol).getValues().filter((l) => String(l[nCol - 1]).trim()) : [];
+  const mexer = tocados.filter((r) => (r.movimentos && r.movimentos.length) || linhas.some((l) => String(l[nCol - 1]) === r.id));
+  if (!mexer.length) return;
+  const ids = {};
+  mexer.forEach((r) => { ids[r.id] = true; });
+  linhas = linhas.filter((l) => !ids[String(l[nCol - 1])]);
+  mexer.forEach((r) => { linhas = linhas.concat(linhasMovimentacao_(r)); });
+  const t = (v) => (v instanceof Date ? v.getTime() : 0);
+  linhas = linhas.map((l, i) => [l, i]).sort((a, b) => t(a[0][0]) - t(b[0][0]) || a[1] - b[1]).map((x) => x[0]);
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, nCol).clearContent();
+  if (linhas.length) sh.getRange(2, 1, linhas.length, nCol).setValues(linhas);
 }
 
 function lerMedicamentos_() {
