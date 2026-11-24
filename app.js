@@ -2231,7 +2231,7 @@ function baixarCsv() {
 // =====================================================================
 // Filtro por categoria na Lotação (pode marcar mais de uma: mostra quem tem qualquer uma delas)
 const catFiltro = new Set();
-const topoFiltro = new Set(); // cartões marcados: "esp:Bovinos", "ocupados", "vazios", "sem"
+const topoFiltro = new Set(); // cartões marcados: "esp:Bovinos", "sem" (vazios e sem informação), "faltando"
 
 function renderLotacao() {
   const estado = estadoPotreiros();
@@ -2258,9 +2258,8 @@ function renderLotacao() {
   const kpi = (v, r, filtro) => `<button type="button" class="kpi" data-kpi="${esc(filtro)}" aria-pressed="${topoFiltro.has(filtro)}"><b>${v}</b><span>${r}</span></button>`;
   const cartoes = [
     ...especies.map((e) => kpi(fmtNum(totEsp[e]), e, "esp:" + e)),
-    kpi(ocupados.length, "Ocupados", "ocupados"),
-    kpi(linhas.filter((l) => l.grupo === "vazios").length, "Vazios", "vazios"),
-    kpi(linhas.filter((l) => l.grupo === "sem").length, "Sem info", "sem"),
+    // Vazios e sem informação juntos (na prática, os dois estão sem animais)
+    kpi(linhas.length - ocupados.length, "Sem animais", "sem"),
   ];
   // "Com falta": potreiros com animais faltando (o cartão só aparece quando há algum)
   const comFalta = linhas.filter((l) => l.grupo === "ocupados" && l.lot.faltando?.length).length;
@@ -2271,11 +2270,11 @@ function renderLotacao() {
   const passaTopo = (l) => !topoFiltro.size || [...topoFiltro].some((k) => (k.startsWith("esp:")
     ? l.grupo === "ocupados" && (porEspecie(l.lot)[k.slice(4)] || 0) > 0
     : k === "faltando" ? l.grupo === "ocupados" && !!l.lot.faltando?.length
-    : l.grupo === k));
+    : l.grupo !== "ocupados"));
 
-  // Botões de categoria: só as dos potreiros que passaram em cima. Com espécie marcada (e sem "Ocupados"),
+  // Botões de categoria: só as dos potreiros que passaram em cima. Com espécie marcada (e sem "Com falta"),
   // só as categorias das espécies marcadas.
-  const todasCats = !topoFiltro.size || topoFiltro.has("ocupados") || topoFiltro.has("faltando");
+  const todasCats = !topoFiltro.size || topoFiltro.has("faltando");
   const porCat = {};
   linhas.filter((l) => l.grupo === "ocupados" && passaTopo(l)).forEach((l) => l.lot.animais.forEach((a) => {
     if (!todasCats && !espSel.includes(especieDe(a.categoria))) return;

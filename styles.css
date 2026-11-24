@@ -462,9 +462,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .t-lot th { padding: 6px 4px; }
 .t-lot th.t-data { white-space: normal; }
 /* Números da lotação numa linha só, para sobrar espaço para a tabela */
-#lot-kpis { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px; }
-#lot-kpis .kpi { padding: 10px 4px; }
-#lot-kpis .kpi b { font-size: 1.35rem; }
+/* Cabem uns 5 cartões por linha no celular; se houver mais, passam para a linha de baixo */
+#lot-kpis { grid-template-columns: repeat(auto-fit, minmax(52px, 1fr)); gap: 6px; }
+#lot-kpis .kpi { padding: 10px 3px; }
+#lot-kpis .kpi b { font-size: clamp(1rem, 5vw, 1.35rem); white-space: nowrap; }
 #lot-kpis .kpi span { font-size: .62rem; letter-spacing: .04em; }
 #lot-kpis .kpi small { display: none; }
 /* Cartões da Lotação são filtros: marcado = cor do campo, como os botões de categoria */
